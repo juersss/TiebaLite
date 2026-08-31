@@ -73,13 +73,14 @@ fun buildCommonRequest(
     bduss: String? = null,
     stoken: String? = null,
     tbs: String? = null,
+    clientVersionValue: String = clientVersion.version,
 ): CommonRequest = when (clientVersion) {
     ClientVersion.TIEBA_V11 -> {
         CommonRequest(
             BDUSS = bduss ?: AccountUtil.getBduss(),
             _client_id = ClientUtils.clientId ?: RetrofitTiebaApi.randomClientId,
             _client_type = 2,
-            _client_version = clientVersion.version,
+            _client_version = clientVersionValue,
             _os_version = "${Build.VERSION.SDK_INT}",
             _phone_imei = MobileInfoUtil.getIMEI(context),
             _timestamp = System.currentTimeMillis(),
@@ -105,7 +106,7 @@ fun buildCommonRequest(
             BDUSS = AccountUtil.getBduss(),
             _client_id = ClientUtils.clientId ?: RetrofitTiebaApi.randomClientId,
             _client_type = 2,
-            _client_version = clientVersion.version,
+            _client_version = clientVersionValue,
             _os_version = "${Build.VERSION.SDK_INT}",
             _phone_imei = MobileInfoUtil.getIMEI(context),
             _timestamp = System.currentTimeMillis(),
@@ -144,7 +145,7 @@ fun buildCommonRequest(
             start_type = 1,
             stoken = AccountUtil.getSToken(),
             swan_game_ver = "1038000",
-            user_agent = getUserAgent("tieba/${clientVersion.version}"),
+            user_agent = getUserAgent("tieba/$clientVersionValue"),
             z_id = AccountUtil.getAccountInfo { zid }
         )
     }
@@ -154,7 +155,7 @@ fun buildCommonRequest(
             BDUSS = AccountUtil.getBduss(),
             _client_id = ClientUtils.clientId ?: RetrofitTiebaApi.randomClientId,
             _client_type = 2,
-            _client_version = clientVersion.version,
+            _client_version = clientVersionValue,
             _os_version = "${Build.VERSION.SDK_INT}", // TODO
             _phone_imei = MobileInfoUtil.getIMEI(context),
             _timestamp = System.currentTimeMillis(),
@@ -196,7 +197,7 @@ fun buildCommonRequest(
             stoken = AccountUtil.getSToken(),
             swan_game_ver = "1038000",
             tbs = tbs,
-            user_agent = getUserAgent("tieba/${clientVersion.version}"),
+            user_agent = getUserAgent("tieba/$clientVersionValue"),
             z_id = AccountUtil.getAccountInfo { zid }
         )
     }

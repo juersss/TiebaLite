@@ -15,6 +15,7 @@ import com.huanchengfly.tieba.post.api.buildCommonRequest
 import com.huanchengfly.tieba.post.api.buildProtobufRequestBody
 import com.huanchengfly.tieba.post.api.getScreenHeight
 import com.huanchengfly.tieba.post.api.getScreenWidth
+import com.huanchengfly.tieba.post.api.getUserAgent
 import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.AddThreadBean
 import com.huanchengfly.tieba.post.api.models.AgreeBean
@@ -152,6 +153,8 @@ import java.io.IOException
 import java.net.URLEncoder
 
 object MixedTiebaApiImpl : ITiebaApi {
+    private const val PB_FLOOR_CLIENT_VERSION = "22.10.1.0"
+
     override fun personalized(loadType: Int, page: Int): Call<PersonalizedBean> =
         RetrofitTiebaApi.MINI_TIEBA_API.personalized(loadType, page)
 
@@ -1417,10 +1420,13 @@ object MixedTiebaApiImpl : ITiebaApi {
         subPostId: Long
     ): Flow<PbFloorResponse> {
         return RetrofitTiebaApi.OFFICIAL_PROTOBUF_TIEBA_V12_API.pbFloorFlow(
-            buildProtobufRequestBody(
+            body = buildProtobufRequestBody(
                 PbFloorRequest(
                     PbFloorRequestData(
-                        common = buildCommonRequest(clientVersion = ClientVersion.TIEBA_V12),
+                        common = buildCommonRequest(
+                            clientVersion = ClientVersion.TIEBA_V12,
+                            clientVersionValue = PB_FLOOR_CLIENT_VERSION,
+                        ),
                         forum_id = forumId,
                         kz = threadId,
                         pid = postId,
@@ -1435,7 +1441,8 @@ object MixedTiebaApiImpl : ITiebaApi {
                 ),
                 clientVersion = ClientVersion.TIEBA_V12,
                 needSToken = false
-            )
+            ),
+            userAgent = getUserAgent("tieba/$PB_FLOOR_CLIENT_VERSION"),
         )
     }
 
