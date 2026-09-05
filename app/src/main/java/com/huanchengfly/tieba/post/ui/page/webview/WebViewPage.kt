@@ -268,17 +268,23 @@ fun WebViewPage(
     }
 }
 
+// 注意：域名判定一律使用精确匹配或后缀匹配，禁止使用 contains，
+// 否则形如 tieba.baidu.com.attacker.tld 的主机名会被误判为内部域。
 fun isTiebaHost(host: String): Boolean {
     return host == "wapp.baidu.com" ||
-            host.contains("tieba.baidu.com") ||
+            host == "tieba.baidu.com" ||
+            host.endsWith(".tieba.baidu.com") ||
             host == "tiebac.baidu.com"
 }
 
 fun isInternalHost(host: String): Boolean {
     return isTiebaHost(host) ||
-            host.contains("wappass.baidu.com") ||
-            host.contains("ufosdk.baidu.com") ||
-            host.contains("m.help.baidu.com")
+            host == "wappass.baidu.com" ||
+            host.endsWith(".wappass.baidu.com") ||
+            host == "ufosdk.baidu.com" ||
+            host.endsWith(".ufosdk.baidu.com") ||
+            host == "m.help.baidu.com" ||
+            host.endsWith(".m.help.baidu.com")
 }
 
 open class MyWebViewClient(
@@ -296,13 +302,9 @@ open class MyWebViewClient(
         val host = newUri.host?.lowercase() ?: return false
         val path = newUri.path?.lowercase() ?: return false
         val isHttp = scheme.startsWith("http")
-        val isTieba = host == "wapp.baidu.com" ||
-                host.contains("tieba.baidu.com") ||
-                host == "tiebac.baidu.com"
-        val isInternal = isTieba ||
-                host.contains("wappass.baidu.com") ||
-                host.contains("ufosdk.baidu.com") ||
-                host.contains("m.help.baidu.com")
+        // 与 injectCookies 共用同一套域名判定，避免维护两份逻辑
+        val isTieba = isTiebaHost(host)
+        val isInternal = isInternalHost(host)
         return when {
             isHttp && isTieba -> {
                 if (path == "/f" || path == "/mo/q/m") {
@@ -426,10 +428,20 @@ open class MyWebViewClient(
         host: String,
     ) {
         if (uri.scheme.equals("intent", ignoreCase = true)) {
-            launchThirdPartyApp(
+            // 畸形/恶意 intent: 链接会让 parseUri 抛 URISyntaxException,不捕获即主线程崩溃
+            // (远程可触发,官方 Chromium 样板此步同样带 try/catch);解析失败按"无匹配"处理
+            val parsed = runCatching {
                 Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
-                    .addCategory(Intent.CATEGORY_BROWSABLE), host
-            )
+                    // 防 intent redirection:远端页面可借 component=/selector= 把 intent 指到
+                    // 任意组件,剥离后只能按 action/categories/data 隐式解析(CATEGORY_BROWSABLE
+                    // 仍生效),匹配不到就不启动
+                    .apply {
+                        component = null
+                        selector = null
+                    }
+                    .addCategory(Intent.CATEGORY_BROWSABLE)
+            }.getOrNull() ?: return
+            launchThirdPartyApp(parsed, host)
         } else {
             launchThirdPartyApp(
                 Intent(
@@ -440,7 +452,18 @@ open class MyWebViewClient(
         }
     }
 
+    /**
+     * 判断该 URL 是否属于授信域名（与 interceptWebViewRequest 共用 isInternalHost）。
+     * 非授信域名一律返回 false，避免把登录凭据写入任意外部站点。
+     */
+    private fun isTrustedUrl(url: String): Boolean {
+        val host = runCatching { url.toUri().host }.getOrNull()?.lowercase()
+        return host != null && isInternalHost(host)
+    }
+
     open fun injectCookies(url: String) {
+        // 安全加固：仅授信域名允许注入 BDUSS，外部域名直接返回，绝不写 cookie
+        if (!isTrustedUrl(url)) return
         val cookieStr = CookieManager.getInstance().getCookie(url) ?: ""
         val cookies = AccountUtil.parseCookie(cookieStr)
         val BDUSS = cookies["BDUSS"]
@@ -453,7 +476,10 @@ open class MyWebViewClient(
 
     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        injectCookies(url ?: "")
+        // 仅授信域名才注入，外部页面不写任何 cookie
+        if (url != null && isTrustedUrl(url)) {
+            injectCookies(url)
+        }
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest?): Boolean {
