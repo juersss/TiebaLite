@@ -59,6 +59,9 @@ open class AppPreferencesUtils private constructor(ctx: Context) {
 
     var useThemedIcon by DataStoreDelegates.boolean(defaultValue = false)
 
+    /** 调试模式:开启后长按赞/踩按钮弹出差分计数诊断（见 AgreeDebug） */
+    var debugMode by DataStoreDelegates.boolean(defaultValue = false, key = "debug_mode")
+
     var autoSign by DataStoreDelegates.boolean(defaultValue = false, key = "auto_sign")
 
     var autoSignTime by DataStoreDelegates.string(
@@ -186,6 +189,12 @@ open class AppPreferencesUtils private constructor(ctx: Context) {
     var showBothUsernameAndNickname by DataStoreDelegates.boolean(
         defaultValue = false,
         key = "show_both_username_and_nickname"
+    )
+
+    // 点踩功能开关:关闭后帖子页/楼中楼详情页隐藏踩图标,赞与计数不受影响
+    var showDisagreeButton by DataStoreDelegates.boolean(
+        defaultValue = true,
+        key = "show_disagree_btn"
     )
 
     var showExperimentalFeatures by DataStoreDelegates.boolean(defaultValue = false)

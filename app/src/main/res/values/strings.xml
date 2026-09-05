@@ -99,6 +99,11 @@
     <string name="button_no">否</string>
     <string name="button_yes">是</string>
     <string name="title_agree">点赞</string>
+    <string name="title_disagree">点踩</string>
+    <string name="title_agree_debug">赞踩诊断</string>
+    <string name="btn_agree_debug_copy">复制诊断</string>
+    <string name="settings_debug_mode">调试模式</string>
+    <string name="tip_debug_mode">开启后长按赞/踩按钮，弹出该对象的计数与状态诊断（可复制反馈）</string>
     <string name="toast_agree_failed">点赞失败 %1$s</string>
     <string name="title_copy_forum_name">复制吧名</string>
     <string name="title_clear_picture_cache">清除图片缓存</string>
@@ -457,6 +462,7 @@
     <string name="message_store_thread_update">贴子更新到了第 %d 楼</string>
     <string name="tip_blocked_post">由于你的屏蔽设置，第 %d 楼已被屏蔽</string>
     <string name="tip_blocked_sub_post">由于你的屏蔽设置，该回复已被屏蔽</string>
+    <string name="tip_sub_post_pic_count">共 %d 张</string>
     <string name="settings_block_video">不看视频贴</string>
     <string name="btn_full_screen">全屏</string>
     <string name="btn_play">播放</string>
@@ -506,6 +512,8 @@
     <string name="settings_image_darken_when_night_mode">夜间模式压暗缩略图</string>
     <string name="tip_toolbar_primary_color_summary">修改重启后生效</string>
     <string name="title_hide_reply">隐藏回贴入口</string>
+    <string name="title_show_disagree_button">显示点踩按钮</string>
+    <string name="summary_show_disagree_button">关闭后帖子页与楼中楼不再显示踩图标</string>
     <string name="title_settings_use_themed_icon">应用图标使用动态取色</string>
     <string name="tip_settings_use_themed_icon_summary_not_supported">当前正在使用的应用图标暂不支持动态取色</string>
     <string name="btn_copy_all">复制全部</string>

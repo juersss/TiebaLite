@@ -10,4 +10,6 @@ message Agree {
   int32 agreeType = 3;
   int64 disagreeNum = 4;
   int64 diffAgreeNum = 5;
+  // 服务端不下发该字段，仅供客户端本地乐观更新“我是否点过踩”
+  int32 hasDisagree = 6;
 }

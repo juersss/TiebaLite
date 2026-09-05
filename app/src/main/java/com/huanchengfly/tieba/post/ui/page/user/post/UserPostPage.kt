@@ -38,7 +38,9 @@ import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.protos.PostInfoList
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
 import com.huanchengfly.tieba.post.arch.getOrNull
@@ -255,7 +257,13 @@ fun UserPostPage(
                             UserPostUiIntent.Agree(
                                 it.thread_id,
                                 it.post_id,
-                                it.agree?.hasAgree ?: 0
+                                // 与帖子页/其他列表页同构:有本地记录以记录为准,
+                                // 回显 hasAgree 不可靠(踩过也可能回 1)仅作无记录兜底;
+                                // 键用 thread_id——与 FeedCard.ThreadAgreeBtn 的显示键一致
+                                OpRecordStore.agreeFlag(
+                                    AgreeParams.OBJ_THREAD,
+                                    it.thread_id, it.agree?.hasAgree ?: 0
+                                )
                             )
                         )
                     },

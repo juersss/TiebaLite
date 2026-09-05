@@ -46,6 +46,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
 import com.huanchengfly.tieba.post.api.models.protos.User
 import com.huanchengfly.tieba.post.api.models.protos.personalized.DislikeReason
@@ -217,7 +219,10 @@ fun PersonalizedPage(
                             PersonalizedUiIntent.Agree(
                                 it.threadId,
                                 it.firstPostId,
-                                it.agree?.hasAgree ?: 0
+                                OpRecordStore.agreeFlag(
+                                    AgreeParams.OBJ_THREAD, it.threadId,
+                                    it.agree?.hasAgree ?: 0
+                                )
                             )
                         )
                     },

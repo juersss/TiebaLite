@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.protos.OriginThreadInfo
 import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
 import com.huanchengfly.tieba.post.api.models.protos.User
@@ -83,9 +85,10 @@ private fun getRefreshIntent(
     isGood: Boolean = false,
     sortType: Int = getSortType(context, forumName),
     goodClassifyId: Int? = if (isGood) 0 else null,
+    preserveList: Boolean = false,
 ): ForumThreadListUiIntent {
-    return if (isGood) ForumThreadListUiIntent.Refresh(forumName, -1, goodClassifyId)
-    else ForumThreadListUiIntent.Refresh(forumName, sortType, null)
+    return if (isGood) ForumThreadListUiIntent.Refresh(forumName, -1, goodClassifyId, preserveList)
+    else ForumThreadListUiIntent.Refresh(forumName, sortType, null, preserveList)
 }
 
 private fun getLoadMoreIntent(
@@ -199,9 +202,11 @@ private fun ThreadList(
         }
         itemsIndexed(
             items = items,
-            key = { index, (holder) ->
+            // key 必须与位置无关:带上 index 后,任何一次刷新/替换都会让全部 key 失效,
+            // LazyColumn 的滚动锚点随之丢失(刷新后跳回顶部)。id 在 distinctById 后唯一
+            key = { _, (holder) ->
                 val (item) = holder
-                "${index}_${item.id}"
+                item.id
             },
             contentType = { _, (holder) ->
                 val (item) = holder
@@ -275,7 +280,7 @@ fun ForumThreadListPage(
     onGlobalEvent<ForumThreadListUiEvent.Refresh>(
         filter = { it.isGood == isGood },
     ) {
-        viewModel.send(getRefreshIntent(context, forumName, isGood, it.sortType))
+        viewModel.send(getRefreshIntent(context, forumName, isGood, it.sortType, preserveList = it.preserveList))
     }
     onGlobalEvent<ForumThreadListUiEvent.BackToTop>(
         filter = { it.isGood == isGood },
@@ -340,7 +345,10 @@ fun ForumThreadListPage(
     )
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isRefreshing,
-        onRefresh = { viewModel.send(getRefreshIntent(context, forumName, isGood)) }
+        // 下拉刷新保留已加载的旧列表(新帖合并到顶部),用户当前浏览位置不被顶走
+        onRefresh = {
+            viewModel.send(getRefreshIntent(context, forumName, isGood, preserveList = true))
+        }
     )
     Box(
         modifier = Modifier.fillMaxSize()
@@ -410,7 +418,10 @@ fun ForumThreadListPage(
                             ForumThreadListUiIntent.Agree(
                                 it.threadId,
                                 it.firstPostId,
-                                it.agree?.hasAgree ?: 0
+                                OpRecordStore.agreeFlag(
+                                    AgreeParams.OBJ_THREAD, it.threadId,
+                                    it.agree?.hasAgree ?: 0
+                                )
                             )
                         )
                     },

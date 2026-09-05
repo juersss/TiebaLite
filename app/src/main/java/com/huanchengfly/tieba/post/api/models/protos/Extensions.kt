@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withAnnotation
 import androidx.compose.ui.text.withStyle
 import com.huanchengfly.tieba.post.App
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.arch.wrapImmutable
 import com.huanchengfly.tieba.post.ui.common.PbContentRender
@@ -20,6 +21,7 @@ import com.huanchengfly.tieba.post.ui.common.VoiceContentRender
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
 import com.huanchengfly.tieba.post.ui.page.thread.SubPostItemData
 import com.huanchengfly.tieba.post.ui.utils.getPhotoViewData
+import com.huanchengfly.tieba.post.ui.utils.getSubPostPhotoViewData
 import com.huanchengfly.tieba.post.utils.EmoticonManager
 import com.huanchengfly.tieba.post.utils.EmoticonUtil.emoticonString
 import com.huanchengfly.tieba.post.utils.ImageUtil
@@ -71,37 +73,9 @@ val ThreadInfo.hasAgreed: Boolean
 val ThreadInfo.hasAbstract: Boolean
     get() = richAbstract.any { (it.type == 0 && it.text.isNotBlank()) || it.type == 2 }
 
-fun ThreadInfo.updateAgreeStatus(
-    hasAgree: Int
-) = if (agree != null) {
-    if (hasAgree != agree.hasAgree) {
-        if (hasAgree == 1) {
-            copy(
-                agreeNum = agreeNum + 1,
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum + 1,
-                    diffAgreeNum = agree.diffAgreeNum + 1,
-                    hasAgree = 1
-                )
-            )
-        } else {
-            copy(
-                agreeNum = agreeNum - 1,
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum - 1,
-                    diffAgreeNum = agree.diffAgreeNum - 1,
-                    hasAgree = 0
-                )
-            )
-        }
-    } else {
-        this
-    }
-} else {
-    copy(
-        agreeNum = if (hasAgree == 1) agreeNum + 1 else agreeNum - 1
-    )
-}
+// 赞踩状态机改造:旧的 updateAgreeStatus 系列"直接改写 proto 计数字段"的扩展
+// 已全部删除——计数永不被修改、±1 由差分公式自然得出,是消灭计数漂移整类 bug 的前提。
+// 记录更新唯一入口:OpRecordStore(setPending/confirm/revertPending/rebase)。
 
 fun ThreadInfo.updateCollectStatus(
     newStatus: Int,
@@ -111,92 +85,6 @@ fun ThreadInfo.updateCollectStatus(
         collectStatus = newStatus,
         collectMarkPid = markPostId.toString()
     )
-} else {
-    this
-}
-
-fun Post.updateAgreeStatus(
-    hasAgree: Int
-) = if (agree != null) {
-    if (hasAgree != agree.hasAgree) {
-        if (hasAgree == 1) {
-            copy(
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum + 1,
-                    diffAgreeNum = agree.diffAgreeNum + 1,
-                    hasAgree = 1
-                )
-            )
-        } else {
-            copy(
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum - 1,
-                    diffAgreeNum = agree.diffAgreeNum - 1,
-                    hasAgree = 0
-                )
-            )
-        }
-    } else {
-        this
-    }
-} else {
-    this
-}
-
-fun SubPostList.updateAgreeStatus(
-    hasAgree: Int
-) = if (agree != null) {
-    if (hasAgree != agree.hasAgree) {
-        if (hasAgree == 1) {
-            copy(
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum + 1,
-                    diffAgreeNum = agree.diffAgreeNum + 1,
-                    hasAgree = 1
-                )
-            )
-        } else {
-            copy(
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum - 1,
-                    diffAgreeNum = agree.diffAgreeNum - 1,
-                    hasAgree = 0
-                )
-            )
-        }
-    } else {
-        this
-    }
-} else {
-    this
-}
-
-fun PostInfoList.updateAgreeStatus(
-    hasAgree: Int,
-) = if (agree != null) {
-    if (hasAgree != agree.hasAgree) {
-        if (hasAgree == 1) {
-            copy(
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum + 1,
-                    diffAgreeNum = agree.diffAgreeNum + 1,
-                    hasAgree = 1
-                ),
-                agree_num = agree_num + 1
-            )
-        } else {
-            copy(
-                agree = agree.copy(
-                    agreeNum = agree.agreeNum - 1,
-                    diffAgreeNum = agree.diffAgreeNum - 1,
-                    hasAgree = 0
-                ),
-                agree_num = agree_num - 1
-            )
-        }
-    } else {
-        this
-    }
 } else {
     this
 }
@@ -359,20 +247,20 @@ val List<PbContent>.renders: ImmutableList<PbContentRender>
 val Post.contentRenders: ImmutableList<PbContentRender>
     get() {
         val renders = content.renders
+        val pics = renders.filterIsInstance<PicContentRender>()
+        if (pics.isEmpty() || from_forum == null) return renders
 
-        return renders.map {
-            if (it is PicContentRender) {
-                it.copy(
+        // 多图时以整楼图片列表构建 PhotoViewData,大图浏览可左右翻页(与楼中楼行为一致)
+        return renders.map { render ->
+            if (render is PicContentRender) {
+                render.copy(
                     photoViewData = getPhotoViewData(
                         this,
-                        it.picId,
-                        it.picUrl,
-                        it.originUrl,
-                        it.showOriginBtn,
-                        it.originSize
+                        pics,
+                        pics.indexOf(render)
                     )
                 )
-            } else it
+            } else render
         }.toImmutableList()
     }
 
@@ -390,9 +278,39 @@ val Post.subPosts: ImmutableList<SubPostItemData>
     get() = sub_post_list?.sub_post_list?.map {
         SubPostItemData(
             it.wrapImmutable(),
-            it.getContentText(origin_thread_info?.author?.id)
+            it.getContentText(origin_thread_info?.author?.id),
+            it.bindSubPostPicPhotoViewData(this)
         )
     }?.toImmutableList() ?: persistentListOf()
+
+/**
+ * pb 响应的 post 不下发 from_forum(实测 pb/page 与 pb/floor 均缺失),
+ * 而图片的 PhotoViewData 绑定需要 from_forum/tid 作为大图上下文,
+ * 这里用同一响应内的吧信息补齐,缺省时原样返回
+ */
+fun Post.withForumFallback(forum: SimpleForum?): Post =
+    if (from_forum == null && forum != null) copy(from_forum = forum) else this
+
+/**
+ * 为楼中楼内容中的图片绑定大图浏览数据：
+ * 楼中楼预览此前把图片丢弃为空文本，这里保留 PicContentRender
+ * 并以父楼层（[post]）上下文构建 PhotoViewData，支持多图翻页
+ */
+private fun SubPostList.bindSubPostPicPhotoViewData(
+    post: Post
+): ImmutableList<PbContentRender> {
+    val renders = content.renders
+    val pics = renders.filterIsInstance<PicContentRender>()
+    if (pics.isEmpty()) return renders
+    return renders.map { render ->
+        if (render is PicContentRender) {
+            render.copy(
+                // 楼中楼图片直接用自身 URL 浏览,不走 pb 图页(见 getSubPostPhotoViewData 注释)
+                photoViewData = getSubPostPhotoViewData(pics, pics.indexOf(render))
+            )
+        } else render
+    }.toImmutableList()
+}
 
 @OptIn(ExperimentalTextApi::class)
 fun SubPostList.getContentText(threadAuthorId: Long? = null): AnnotatedString {

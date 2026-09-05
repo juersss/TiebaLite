@@ -302,6 +302,8 @@ fun SearchThreadItem(
                 )
 
                 ThreadAgreeBtn(
+                    // 搜索结果卡片是静态展示(无点赞交互),键传 tid 仅保持签名一致
+                    threadId = item.tid.toLongOrNull() ?: 0L,
                     hasAgree = false,
                     agreeNum = item.likeNum,
                     onClick = {},

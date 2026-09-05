@@ -401,8 +401,11 @@ fun PbContentText(
                             }
 
                             "user" -> {
-                                val uid = annotation.item.toLong()
-                                navigator.navigate(UserProfilePageDestination(uid))
+                                // uid<=0 不是合法资料页(搜索响应缺 user_id 时回退默认 "0",
+                                // 见 SearchThreadBean.User.userId);非数字同样不跳转而非崩溃
+                                annotation.item.toLongOrNull()?.takeIf { it > 0 }?.let { uid ->
+                                    navigator.navigate(UserProfilePageDestination(uid))
+                                }
                             }
                         }
                     }

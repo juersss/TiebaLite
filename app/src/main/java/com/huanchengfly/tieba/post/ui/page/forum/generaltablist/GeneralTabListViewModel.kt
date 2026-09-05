@@ -1,11 +1,22 @@
 package com.huanchengfly.tieba.post.ui.page.forum.generaltablist
 
 import androidx.compose.runtime.Stable
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.App
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.AgreeRateLimiter
 import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.TiebaRateLimitedException
+import com.huanchengfly.tieba.post.api.models.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.api.models.protos.OpAgreeResult
+import com.huanchengfly.tieba.post.api.models.protos.serverOpFromErrorCode
+import com.huanchengfly.tieba.post.api.models.protos.serverOpFromErrorMessage
+import com.huanchengfly.tieba.post.api.models.protos.toOpAgreeResult
 import com.huanchengfly.tieba.post.api.models.AgreeBean
+import com.huanchengfly.tieba.post.api.models.CommonResponse
 import com.huanchengfly.tieba.post.api.models.protos.FrsTabInfo
 import com.huanchengfly.tieba.post.api.models.protos.GeneralTabList.GeneralTabListResponse
-import com.huanchengfly.tieba.post.api.models.protos.updateAgreeStatus
+import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaApiException
 import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaUnknownException
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorCode
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
@@ -28,8 +39,10 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
@@ -49,17 +62,57 @@ class GeneralTabListViewModel @Inject constructor() :
             is GeneralTabListPartialChange.FirstLoad.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
             is GeneralTabListPartialChange.Refresh.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
             is GeneralTabListPartialChange.LoadMore.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
+            is GeneralTabListPartialChange.Agree.Start -> {
+                // 乐观意图进记录表;显示数字/亮灯由 FeedCard.ThreadAgreeBtn 从 records 推导
+                OpRecordStore.setPending(
+                    App.INSTANCE,
+                    AgreeParams.OBJ_THREAD,
+                    partialChange.threadId,
+                    if (partialChange.hasAgree == 1) MyAgreeOp.AGREE else MyAgreeOp.NONE
+                )
+                null
+            }
             is GeneralTabListPartialChange.Agree.Failure -> {
+                // 限流异常不是 TiebaException,getErrorCode() 会退化成 -1——按类型判定;
+                // 被拦截的请求从未 setPending,绝不 revertPending(否则会凭空写出
+                // my=server=NONE 的记录,永久屏蔽服务端回显)
+                if (partialChange.error !is TiebaRateLimitedException) {
+                    OpRecordStore.revertPending(
+                        App.INSTANCE,
+                        AgreeParams.OBJ_THREAD,
+                        partialChange.threadId
+                    )
+                }
                 GeneralTabListUiEvent.AgreeFail(
                     partialChange.threadId,
                     partialChange.postId,
                     partialChange.hasAgree,
-                    partialChange.error.getErrorCode(),
+                    if (partialChange.error is TiebaRateLimitedException)
+                        AgreeParams.RATE_LIMIT_ERROR_CODE
+                    else partialChange.error.getErrorCode(),
                     partialChange.error.getErrorMessage()
                 )
             }
+            // 列表重载:本次返回的 agreeNum 基准已包含已确认操作,对齐标记跟进意图
+            is GeneralTabListPartialChange.FirstLoad.Success -> {
+                rebaseLoaded(partialChange.threadList); null
+            }
+            is GeneralTabListPartialChange.Refresh.Success -> {
+                rebaseLoaded(partialChange.threadList); null
+            }
+            is GeneralTabListPartialChange.LoadMore.Success -> {
+                rebaseLoaded(partialChange.threadList); null
+            }
             else -> null
         }
+
+    private fun rebaseLoaded(threadList: List<ThreadItemData>) {
+        val keys = HashSet<String>(threadList.size)
+        threadList.forEach {
+            keys.add(OpRecordStore.key(AgreeParams.OBJ_THREAD, it.thread.get { threadId }))
+        }
+        OpRecordStore.rebase(App.INSTANCE, keys)
+    }
 }
 
 private object GeneralTabListPartialChangeProducer :
@@ -153,29 +206,110 @@ private object GeneralTabListPartialChangeProducer :
             .onStart { emit(GeneralTabListPartialChange.LoadMore.Start) }
             .catch { emit(GeneralTabListPartialChange.LoadMore.Failure(it)) }
 
-    private fun GeneralTabListUiIntent.Agree.producePartialChange(): Flow<GeneralTabListPartialChange.Agree> =
-        TiebaApi.getInstance().opAgreeFlow(
-            threadId.toString(),
-            postId.toString(),
-            hasAgree,
-            objType = 3
-        ).map<AgreeBean, GeneralTabListPartialChange.Agree> {
-            GeneralTabListPartialChange.Agree.Success(
-                threadId,
-                hasAgree xor 1
-            )
+    private fun GeneralTabListUiIntent.Agree.producePartialChange(): Flow<GeneralTabListPartialChange.Agree> {
+        // 限流预检在任何状态变更之前(与帖子页同构):被拦截不产生 Start、零记录变更
+        val acquired = AgreeRateLimiter.tryAcquire(
+            AgreeRateLimiter.keyFor(AgreeParams.OBJ_THREAD, threadId)
+        )
+        // 配对撤销判定取自 Start 之前的记录(此前在帖子页点过踩):服务端赞踩相互独立,
+        // 列表点赞若不撤销已有的踩,踩会变孤儿(服务端留着、UI 永久不可见)。撤销仅在
+        // 主操作被服务端接受/权威对齐时执行,Business 拒绝不撤销(防把拒绝放大成反向漂移)
+        // 意图判定直读 prefs 真值而非内存镜像:异步 init 窗口内内存表未加载,
+        // 读内存表会把 prefs 已有的踩判成无→配对撤销失效→服务端孤儿踩(R8-NEW1/链 C)
+        val undoDisagree =
+            OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId) ==
+                MyAgreeOp.DISAGREE
+        suspend fun undoDisagreeIfAccepted() {
+            if (!undoDisagree) return
+            runCatching {
+                if (!AgreeRateLimiter.tryAcquire(
+                        AgreeRateLimiter.keyFor(AgreeParams.OBJ_THREAD, threadId),
+                        checkPerObject = false
+                    )
+                ) return@runCatching
+                TiebaApi.getInstance()
+                    .opDisagreeFlow(
+                        threadId.toString(),
+                        postId.toString(),
+                        objType = AgreeParams.OBJ_THREAD,
+                        opType = AgreeParams.OP_UNDO
+                    )
+                    .collect { }
+            }
         }
-            .catch {
-                emit(
+        return flow {
+            if (!acquired) throw TiebaRateLimitedException()
+            emitAll(
+                TiebaApi.getInstance().opAgreeFlow(
+                    threadId.toString(),
+                    postId.toString(),
+                    hasAgree,
+                    objType = 3
+                )
+            )
+        }.map<AgreeBean, GeneralTabListPartialChange.Agree> { bean ->
+            val agree = (hasAgree xor 1) == 1
+            // HTTP 200 不等于业务成功:先按 errorCode 做三态判定,再决定要不要写记录
+            when (val result = bean.toOpAgreeResult(threadId, agree)) {
+                // Ok 不写记录——Start 的 setPending 已表达意图,此刻 confirm 会抵消乐观偏移
+                is OpAgreeResult.Ok -> {
+                    undoDisagreeIfAccepted()
+                    GeneralTabListPartialChange.Agree.Success(
+                        threadId,
+                        hasAgree xor 1
+                    )
+                }
+
+                is OpAgreeResult.Authoritative -> {
+                    // 服务端权威陈述("你已赞过"等):无条件采纳,my 与 server 一并对齐过去
+                    OpRecordStore.confirm(
+                        App.INSTANCE,
+                        AgreeParams.OBJ_THREAD,
+                        threadId,
+                        serverOpFromErrorCode(result.code)
+                    )
+                    undoDisagreeIfAccepted()
+                    GeneralTabListPartialChange.Agree.Success(
+                        threadId,
+                        hasAgree xor 1
+                    )
+                }
+
+                is OpAgreeResult.Business -> {
+                    // 普通业务拒绝:不 confirm(否则 my=server 落盘永不自愈),
+                    // 回滚统一交给 dispatchEvent(与网络失败同路)
                     GeneralTabListPartialChange.Agree.Failure(
                         threadId,
                         postId,
                         hasAgree,
-                        it
+                        TiebaApiException(
+                            CommonResponse(result.code.toIntOrNull() ?: CommonResponse.ERROR_CODE_UNKNOWN, result.msg)
+                        )
                     )
-                )
+                }
             }
-            .onStart { emit(GeneralTabListPartialChange.Agree.Start(threadId, hasAgree xor 1)) }
+        }
+            .catch {
+                // 数字 error_code 经 FailureResponseInterceptor 抛异常时 .map 不被调用;
+                // 服务端权威陈述必须采纳而非回滚(同口径收尾,R8 裁决 12)
+                val authoritative = serverOpFromErrorMessage(it.getErrorMessage())
+                if (authoritative == null) {
+                    emit(
+                        GeneralTabListPartialChange.Agree.Failure(
+                            threadId,
+                            postId,
+                            hasAgree,
+                            it
+                        )
+                    )
+                } else {
+                    OpRecordStore.confirm(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId, authoritative)
+                    undoDisagreeIfAccepted()
+                    emit(GeneralTabListPartialChange.Agree.Success(threadId, hasAgree xor 1))
+                }
+            }
+            .onStart { if (acquired) emit(GeneralTabListPartialChange.Agree.Start(threadId, hasAgree xor 1)) }
+    }
 }
 
 sealed interface GeneralTabListUiIntent : UiIntent {
@@ -282,46 +416,13 @@ sealed interface GeneralTabListPartialChange : PartialChange<GeneralTabListUiSta
     }
 
     sealed class Agree private constructor() : GeneralTabListPartialChange {
-        private fun List<ThreadItemData>.updateAgreeStatus(
-            threadId: Long,
-            hasAgree: Int,
-        ): ImmutableList<ThreadItemData> {
-            return map { data ->
-                val (thread) = data
-                if (thread.get { id } == threadId) {
-                    ThreadItemData(thread.getImmutable { updateAgreeStatus(hasAgree) })
-                } else data
-            }.toImmutableList()
-        }
-
+        // 差分模型:显示由 FeedCard.ThreadAgreeBtn 从 OpRecordStore.records 推导,
+        // reducer 不再改写 proto 计数;记录更新全部集中在 dispatchEvent
         override fun reduce(oldState: GeneralTabListUiState): GeneralTabListUiState =
             when (this) {
-                is Start -> {
-                    oldState.copy(
-                        threadList = oldState.threadList.updateAgreeStatus(
-                            threadId,
-                            hasAgree
-                        )
-                    )
-                }
-
-                is Success -> {
-                    oldState.copy(
-                        threadList = oldState.threadList.updateAgreeStatus(
-                            threadId,
-                            hasAgree
-                        )
-                    )
-                }
-
-                is Failure -> {
-                    oldState.copy(
-                        threadList = oldState.threadList.updateAgreeStatus(
-                            threadId,
-                            hasAgree
-                        )
-                    )
-                }
+                is Start -> oldState
+                is Success -> oldState
+                is Failure -> oldState
             }
 
         data class Start(

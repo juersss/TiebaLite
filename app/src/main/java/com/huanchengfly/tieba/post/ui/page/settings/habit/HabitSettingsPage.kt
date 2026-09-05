@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.NightsStay
 import androidx.compose.material.icons.outlined.PhotoSizeSelectActual
 import androidx.compose.material.icons.outlined.SecurityUpdateWarning
 import androidx.compose.material.icons.outlined.SpeakerNotesOff
+import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material.icons.outlined.WatchLater
@@ -341,6 +342,22 @@ fun HabitSettingsPage(
                     LeadingIcon {
                         AvatarIcon(
                             icon = Icons.Outlined.SpeakerNotesOff,
+                            size = Sizes.Small,
+                            contentDescription = null,
+                        )
+                    }
+                }
+            }
+            prefsItem {
+                SwitchPref(
+                    key = "show_disagree_btn",
+                    title = stringResource(id = R.string.title_show_disagree_button),
+                    summary = stringResource(id = R.string.summary_show_disagree_button),
+                    defaultChecked = true,
+                ) {
+                    LeadingIcon {
+                        AvatarIcon(
+                            icon = Icons.Outlined.ThumbDown,
                             size = Sizes.Small,
                             contentDescription = null,
                         )

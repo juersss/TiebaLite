@@ -111,6 +111,23 @@ fun MoreSettingsPage(
                     leadingIcon = {
                         LeadingIcon {
                             AvatarIcon(
+                                icon = Icons.Outlined.BugReport,
+                                size = Sizes.Small,
+                                contentDescription = null,
+                            )
+                        }
+                    },
+                    key = "debug_mode",
+                    title = stringResource(id = R.string.settings_debug_mode),
+                    defaultChecked = false,
+                    summary = stringResource(id = R.string.tip_debug_mode)
+                )
+            }
+            prefsItem {
+                SwitchPref(
+                    leadingIcon = {
+                        LeadingIcon {
+                            AvatarIcon(
                                 icon = ImageVector.vectorResource(id = R.drawable.ic_chrome),
                                 size = Sizes.Small,
                                 contentDescription = null,

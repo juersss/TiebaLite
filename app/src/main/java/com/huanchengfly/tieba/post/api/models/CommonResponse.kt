@@ -11,4 +11,13 @@ data class CommonResponse(
     @JsonAdapter(ErrorMsgAdapter::class)
     @SerializedName("error_msg", alternate = ["errmsg", "error"])
     val errorMsg: String = ""
-) : BaseBean()
+) : BaseBean() {
+    companion object {
+        /**
+         * error_code 字段无法解析为 Int 时的兜底值("解析失败"的占位)。
+         * 注意与 AgreeParams.RATE_LIMIT_ERROR_CODE(-1001) 只差一位数字,两者毫无关系:
+         * 后者是客户端限流的哨兵值,会参与 UI 的事件分派判断,不能混用。
+         */
+        const val ERROR_CODE_UNKNOWN = -1
+    }
+}

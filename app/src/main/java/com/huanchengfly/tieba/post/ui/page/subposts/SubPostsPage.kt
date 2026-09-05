@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.models.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.api.models.protos.OpRecord
+import com.huanchengfly.tieba.post.api.models.protos.displayDelta
 import com.huanchengfly.tieba.post.api.models.protos.SubPostList
 import com.huanchengfly.tieba.post.api.models.protos.User
 import com.huanchengfly.tieba.post.api.models.protos.bawuType
@@ -60,9 +65,10 @@ import com.huanchengfly.tieba.post.ui.page.destinations.ThreadPageDestination
 import com.huanchengfly.tieba.post.ui.page.destinations.UserProfilePageDestination
 import com.huanchengfly.tieba.post.ui.page.reply.ReplyArgs
 import com.huanchengfly.tieba.post.ui.page.reply.ReplyDialog
-import com.huanchengfly.tieba.post.ui.page.thread.PostAgreeBtn
+import com.huanchengfly.tieba.post.ui.page.thread.PostAgreeDisagreePair
 import com.huanchengfly.tieba.post.ui.page.thread.PostCard
 import com.huanchengfly.tieba.post.ui.page.thread.UserNameText
+import com.huanchengfly.tieba.post.ui.widgets.compose.AgreeDebugInfo
 import com.huanchengfly.tieba.post.ui.widgets.compose.Avatar
 import com.huanchengfly.tieba.post.ui.widgets.compose.BlockTip
 import com.huanchengfly.tieba.post.ui.widgets.compose.BlockableContent
@@ -83,6 +89,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.rememberMenuState
 import com.huanchengfly.tieba.post.ui.widgets.compose.states.StateScreen
 import com.huanchengfly.tieba.post.utils.AccountUtil.LocalAccount
 import com.huanchengfly.tieba.post.utils.DateTimeUtils
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.utils.StringUtil
 import com.huanchengfly.tieba.post.utils.TiebaUtil
 import com.huanchengfly.tieba.post.utils.appPreferences
@@ -182,6 +189,8 @@ internal fun SubPostsContent(
         prop1 = SubPostsUiState::anti,
         initial = null
     )
+    // 赞踩差分计数模型:我的态度与计数偏移全部来自本地记录,不依赖服务端回显
+    val opRecords by viewModel.opRecords.collectAsState()
     val forum by viewModel.uiState.collectPartialAsState(
         prop1 = SubPostsUiState::forum,
         initial = null
@@ -444,16 +453,36 @@ internal fun SubPostsContent(
                                         navigator.navigate(UserProfilePageDestination(it.id))
                                     },
                                     onAgree = {
-                                        val hasAgreed = it.get { agree?.hasAgree != 0 }
+                                        val parentPostId = post?.get { id } ?: postId
+                                        // 意图判定直读 prefs 真值:异步 init 窗口内内存表未加载(R8-NEW1)
+                                        val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_POST, parentPostId)
                                         viewModel.send(
                                             SubPostsUiIntent.Agree(
                                                 forumId,
                                                 threadId,
-                                                post?.get { id } ?: postId,
-                                                agree = !hasAgreed
+                                                parentPostId,
+                                                agree = myOp != MyAgreeOp.AGREE,
+                                                undoDisagree = myOp == MyAgreeOp.DISAGREE
                                             )
                                         )
                                     },
+                                    onDisagree = {
+                                        val parentPostId = post?.get { id } ?: postId
+                                        val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_POST, parentPostId)
+                                        viewModel.send(
+                                            SubPostsUiIntent.Disagree(
+                                                forumId,
+                                                threadId,
+                                                parentPostId,
+                                                disagree = myOp != MyAgreeOp.DISAGREE,
+                                                undoAgree = myOp == MyAgreeOp.AGREE
+                                            )
+                                        )
+                                    },
+                                    opOverride = opRecords[OpRecordStore.key(
+                                        AgreeParams.OBJ_POST,
+                                        post?.get { id } ?: postId
+                                    )],
                                     onReplyClick = {
                                         val fid = forum?.get { id } ?: forumId
                                         if (fid != 0L) {
@@ -506,20 +535,36 @@ internal fun SubPostsContent(
                     ) { _, item ->
                         SubPostItem(
                             item = item,
+                            opRecords = opRecords,
                             canDelete = { it.author_id == account?.uid?.toLongOrNull() || it.author?.id == account?.uid?.toLongOrNull() || thread?.get { author?.id } ==  account?.uid?.toLongOrNull() },
                             threadAuthorId = thread?.get { author?.id },
                             onUserClick = {
                                 navigator.navigate(UserProfilePageDestination(it.id))
                             },
                             onAgree = {
-                                val hasAgreed = it.agree?.hasAgree != 0
+                                // 意图判定直读 prefs 真值:异步 init 窗口内内存表未加载(R8-NEW1)
+                                val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_SUB_POST, it.id)
                                 viewModel.send(
                                     SubPostsUiIntent.Agree(
                                         forumId,
                                         threadId,
                                         post?.get { id } ?: postId,
                                         subPostId = it.id,
-                                        agree = !hasAgreed
+                                        agree = myOp != MyAgreeOp.AGREE,
+                                        undoDisagree = myOp == MyAgreeOp.DISAGREE
+                                    )
+                                )
+                            },
+                            onDisagree = {
+                                val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_SUB_POST, it.id)
+                                viewModel.send(
+                                    SubPostsUiIntent.Disagree(
+                                        forumId,
+                                        threadId,
+                                        post?.get { id } ?: postId,
+                                        subPostId = it.id,
+                                        disagree = myOp != MyAgreeOp.DISAGREE,
+                                        undoAgree = myOp == MyAgreeOp.AGREE
                                     )
                                 )
                             },
@@ -565,7 +610,8 @@ private fun getDescText(
 ): String {
     val texts = listOfNotNull(
         time?.let { DateTimeUtils.getRelativeTimeString(App.INSTANCE, it) },
-        ipAddress?.let { App.INSTANCE.getString(R.string.text_ip_location, it) }
+        // pb/floor 不下发楼中楼作者的 ip_address(实测恒为空),空时不渲染"来自"前缀
+        ipAddress?.takeIf { it.isNotBlank() }?.let { App.INSTANCE.getString(R.string.text_ip_location, it) }
     )
     if (texts.isEmpty()) return ""
     return texts.joinToString(" ")
@@ -578,6 +624,8 @@ private fun SubPostItem(
     canDelete: (SubPostList) -> Boolean = { false },
     onUserClick: (User) -> Unit = {},
     onAgree: (SubPostList) -> Unit = {},
+    onDisagree: (SubPostList) -> Unit = {},
+    opRecords: Map<String, OpRecord> = emptyMap(),
     onReplyClick: (SubPostList) -> Unit = {},
     onMenuCopyClick: ((String) -> Unit)? = null,
     onMenuDeleteClick: ((SubPostList) -> Unit)? = null,
@@ -588,12 +636,14 @@ private fun SubPostItem(
     val account = LocalAccount.current
     val coroutineScope = rememberCoroutineScope()
     val author = remember(subPost) { subPost.get { author }?.wrapImmutable() }
-    val hasAgreed = remember(subPost) {
-        subPost.get { agree?.hasAgree == 1 }
-    }
-    val agreeNum = remember(subPost) {
-        subPost.get { agree?.diffAgreeNum ?: 0L }
-    }
+    // 赞踩差分计数模型:本地记录优先,服务端回显只提供计数基准
+    val opRecord = opRecords[OpRecordStore.key(
+        AgreeParams.OBJ_SUB_POST,
+        subPost.get { id }
+    )] ?: OpRecord()
+    val hasAgreed = opRecord.my == MyAgreeOp.AGREE
+    val agreeNum = (subPost.get { agree?.diffAgreeNum ?: 0L }) + opRecord.displayDelta()
+    val hasDisagreed = opRecord.my == MyAgreeOp.DISAGREE
     val menuState = rememberMenuState()
     BlockableContent(
         blocked = blocked,
@@ -689,10 +739,24 @@ private fun SubPostItem(
                                 onUserClick(author.get())
                             }
                         ) {
-                            PostAgreeBtn(
+                            PostAgreeDisagreePair(
                                 hasAgreed = hasAgreed,
                                 agreeNum = agreeNum,
-                                onClick = { onAgree(subPost.get()) }
+                                hasDisagreed = hasDisagreed,
+                                onAgreeClick = { onAgree(subPost.get()) },
+                                onDisagreeClick = { onDisagree(subPost.get()) },
+                                debugInfo = AgreeDebugInfo(
+                                    objType = AgreeParams.OBJ_SUB_POST,
+                                    objId = subPost.get { id },
+                                    serverAgree = subPost.get { agree },
+                                    record = opRecord,
+                                    hasRecord = opRecords.containsKey(
+                                        OpRecordStore.key(
+                                            AgreeParams.OBJ_SUB_POST,
+                                            subPost.get { id }
+                                        )
+                                    ),
+                                )
                             )
                         }
                     }

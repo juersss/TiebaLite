@@ -682,11 +682,19 @@ fun ForumPage(
                                                         getSortType(
                                                             context,
                                                             forumName
-                                                        )
+                                                        ),
+                                                        preserveList = true
                                                     )
                                                 )
                                             }
                                         }
+                                        // 同下拉刷新:FAB 刷新一并重拉吧头(签到状态等)
+                                        viewModel.send(
+                                            ForumUiIntent.Load(
+                                                forumName,
+                                                getSortType(context, forumName)
+                                            )
+                                        )
                                     }
 
                                     "back_to_top" -> {
@@ -746,8 +754,14 @@ fun ForumPage(
                                 getSortType(
                                     context,
                                     forumName
-                                )
+                                ),
+                                preserveList = true
                             )
+                        )
+                        // 吧头信息(签到状态/等级经验/tbs)随下拉刷新一并重拉:
+                        // 签到后下拉即可看到"已签到",无需退吧重进(09-06 用户需求)
+                        viewModel.send(
+                            ForumUiIntent.Load(forumName, getSortType(context, forumName))
                         )
                         isFakeLoading = true
                     }

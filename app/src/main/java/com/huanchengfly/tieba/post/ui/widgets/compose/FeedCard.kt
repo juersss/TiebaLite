@@ -31,8 +31,8 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.ProvideTextStyle
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.PhotoSizeSelectActual
 import androidx.compose.material.icons.rounded.SwapCalls
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.remember
@@ -69,7 +70,12 @@ import com.eygraber.compose.placeholder.material.placeholder
 import com.stoyanvuchev.systemuibarstweaker.rememberSystemUIBarsTweaker
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.ThreadBean
+import com.huanchengfly.tieba.post.api.models.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.api.models.protos.agreeCountDelta
+import com.huanchengfly.tieba.post.api.models.protos.displayDelta
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.api.models.protos.Media
 import com.huanchengfly.tieba.post.api.models.protos.OriginThreadInfo
 import com.huanchengfly.tieba.post.api.models.protos.PostInfoList
@@ -697,27 +703,38 @@ fun ThreadReplyBtn(
 
 @Composable
 fun ThreadAgreeBtn(
+    threadId: Long,
     hasAgree: Boolean,
     agreeNum: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 差分模型迁移(列表页收尾项):本进程操作过的帖子以 OpRecordStore 记录为准——
+    // 列表端点的 agree.hasAgree 是已知不可靠回显(踩过也可能回 1),直接读它会把
+    // "帖子页刚踩过的楼"显示成"已赞点亮"。无记录时回退服务端回显(旧行为,零回归)。
+    // records 在 App.onCreate 全量加载、每次写入同步,是完整镜像;各页 confirm
+    // 键(id/threadId 实测同为 tid)与本处 threadId 一致,帖子页与列表页状态互通。
+    val records by OpRecordStore.records.collectAsState()
+    val record = records[OpRecordStore.key(AgreeParams.OBJ_THREAD, threadId)]
+    val lit = record?.my == MyAgreeOp.AGREE || (record == null && hasAgree)
+    // 基准是原始 agreeNum(赞数)而非 diffAgreeNum,踩轴不得影响赞数 → 用赞轴专用差分
+    val displayNum = (agreeNum.toLongOrNull() ?: 0L) + (record?.agreeCountDelta() ?: 0L)
     val contentColor =
-        if (hasAgree) ExtendedTheme.colors.primary else ExtendedTheme.colors.textSecondary
+        if (lit) ExtendedTheme.colors.primary else ExtendedTheme.colors.textSecondary
     val animatedColor by animateColorAsState(contentColor, label = "agreeBtnContentColor")
 
     ActionBtn(
         icon = {
             Icon(
-                imageVector = if (hasAgree) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                imageVector = if (lit) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                 contentDescription = stringResource(id = R.string.desc_like),
             )
         },
         text = {
             Text(
-                text = if (agreeNum == "0" || agreeNum.isEmpty())
+                text = if (displayNum == 0L)
                     stringResource(id = R.string.title_agree)
-                else agreeNum.toLongOrNull()?.getShortNumString() ?: agreeNum
+                else displayNum.getShortNumString()
             )
         },
         modifier = modifier,
@@ -823,6 +840,7 @@ fun FeedCard(
                 )
 
                 ThreadAgreeBtn(
+                    threadId = item.get { id },
                     hasAgree = item.get { agree?.hasAgree == 1 },
                     agreeNum = item.get { agreeNum }.toString(),
                     onClick = { onAgree(item.get()) },
@@ -894,6 +912,7 @@ fun FeedCard(
                 )
 
                 ThreadAgreeBtn(
+                    threadId = item.get { threadInfo.threadId },
                     hasAgree = item.get { threadInfo.agree.hasAgree == 1 },
                     agreeNum = item.get { threadInfo.agreeNum }.toString(),
                     onClick = { onAgree(item.get()) },
@@ -980,6 +999,7 @@ fun FeedCard(
                 )
 
                 ThreadAgreeBtn(
+                    threadId = item.get { thread_id },
                     hasAgree = item.get { agree?.hasAgree == 1 },
                     agreeNum = item.get { agree_num }.toString(),
                     onClick = { onAgree(item.get()) },

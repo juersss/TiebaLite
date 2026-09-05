@@ -48,6 +48,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.TopicInfoBean
 import com.huanchengfly.tieba.post.api.models.protos.hasAgree
 import com.huanchengfly.tieba.post.arch.CommonUiEvent.ScrollToTop.bindScrollToTopEvent
@@ -337,7 +339,11 @@ fun TopicDetailPage(
                                                             TopicDetailUiIntent.Agree(
                                                                 item.threadInfo.threadId,
                                                                 item.threadInfo.forumId,
-                                                                item.threadInfo.userAgree
+                                                                OpRecordStore.agreeFlag(
+                                                                    AgreeParams.OBJ_THREAD,
+                                                                    item.threadInfo.threadId,
+                                                                    item.threadInfo.userAgree
+                                                                )
                                                             )
                                                         )
                                                     },

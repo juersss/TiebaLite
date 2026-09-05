@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.eygraber.compose.placeholder.material.placeholder
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.protos.hasAgree
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
@@ -318,7 +320,10 @@ fun HotPage(
                                         HotUiIntent.Agree(
                                             threadId = it.threadId,
                                             postId = it.firstPostId,
-                                            hasAgree = it.hasAgree
+                                            hasAgree = OpRecordStore.agreeFlag(
+                                                AgreeParams.OBJ_THREAD,
+                                                it.threadId, it.hasAgree
+                                            )
                                         )
                                     )
                                 },

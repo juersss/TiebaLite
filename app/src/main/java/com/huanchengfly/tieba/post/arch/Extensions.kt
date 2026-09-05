@@ -10,6 +10,8 @@ import androidx.compose.runtime.currentComposer
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel as androidxHiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -74,7 +76,13 @@ inline fun <reified Event : UiEvent> Flow<UiEvent>.onEvent(
     noinline listener: suspend (Event) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    DisposableEffect(key1 = listener, key2 = this) {
+    // ①listener lambda 身份随捕获状态变化会让 DisposableEffect 反复拆装 collector,
+    //   uiEventFlow replay=0 在间隙直接丢事件(与 R7-F3 onGlobalEvent 同机制,R8-NEW2);
+    //   注册只随 scope/flow 建立,回调经 rememberUpdatedState 取最新闭包。
+    // ②内层 launch 使 listener 逃逸 job.cancel——改为串行直调(listener 均为
+    //   toast/滚动类短操作),in-flight 回调随 dispose 一并取消。
+    val currentListener by rememberUpdatedState(listener)
+    DisposableEffect(key1 = coroutineScope, key2 = this) {
         with(coroutineScope) {
             val job = launch {
                 this@onEvent
@@ -82,9 +90,7 @@ inline fun <reified Event : UiEvent> Flow<UiEvent>.onEvent(
                     .cancellable()
                     .flowOn(Dispatchers.IO)
                     .collect {
-                        launch {
-                            listener(it)
-                        }
+                        currentListener(it)
                     }
             }
 
@@ -100,16 +106,16 @@ inline fun <reified Event : UiEvent> BaseViewModel<*, *, *, *>.onEvent(
 ) {
     val applyContext = currentComposer.applyCoroutineContext
     val coroutineScope = remember(applyContext) { CoroutineScope(applyContext) }
-    DisposableEffect(key1 = listener, key2 = this) {
+    // 同上(R8-NEW2):单次注册 + latest 闭包 + 串行直调
+    val currentListener by rememberUpdatedState(listener)
+    DisposableEffect(key1 = coroutineScope, key2 = this) {
         val job = coroutineScope.launch {
             uiEventFlow
                 .filterIsInstance<Event>()
                 .cancellable()
                 .flowOn(Dispatchers.IO)
                 .collect {
-                    coroutineScope.launch {
-                        listener(it)
-                    }
+                    currentListener(it)
                 }
         }
 

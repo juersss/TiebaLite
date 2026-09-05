@@ -4,8 +4,10 @@ import android.util.Log
 import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.huanchengfly.tieba.post.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -30,7 +32,14 @@ abstract class BaseViewModel<
 
     var initialized = false
 
-    private val _internalUiEventFlow: MutableSharedFlow<UiEvent> = MutableSharedFlow()
+    // 缓冲 64 + DROP_OLDEST(R9-F1):onEvent 的 listener 可能挂起(snackbar 数秒),
+    // 无缓冲的 emit 会反压冻结整条 partial-change 管线(记录写入/dispatchEvent 全部排队);
+    // 与 GlobalEventFlow 同款配置,溢出丢最老事件(事件为稀疏 UI 反馈,64 深度实际不触顶)
+    private val _internalUiEventFlow: MutableSharedFlow<UiEvent> = MutableSharedFlow(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     val uiEventFlow: Flow<UiEvent> = _internalUiEventFlow
 
@@ -45,10 +54,13 @@ abstract class BaseViewModel<
 
     val uiState = partialChangeProducer.toPartialChangeFlow(_intentFlow)
         .onEach {
-            Log.i("ViewModel", "partialChange $it")
+            // 仅在 debug 下输出，且只打类名：状态对象可能携带上千条数据，全量 toString 开销极大
+            if (BuildConfig.DEBUG) Log.d("ViewModel", "partialChange ${it.javaClass.simpleName}")
             val event = dispatchEvent(it)
             if (event != null) {
-                Log.i("ViewModel", "event $event")
+                // 收缩与 partialChange 同口径:事件/意图对象可能携凭据(tbs)或用户正文,
+                // 全量 toString 是 debug 日志卫生问题与开销(R6-F1)
+                if (BuildConfig.DEBUG) Log.d("ViewModel", "event ${event.javaClass.simpleName}")
                 _internalUiEventFlow.emit(event)
             }
         }
@@ -62,7 +74,8 @@ abstract class BaseViewModel<
     protected open fun dispatchEvent(partialChange: PC): UiEvent? = null
 
     fun send(intent: Intent) {
-        Log.i("ViewModel", "send $intent")
+        // 同上:ReplyUiIntent.Send 等意图携带 content/tbs,只打类名(R6-F1)
+        if (BuildConfig.DEBUG) Log.d("ViewModel", "send ${intent.javaClass.simpleName}")
         viewModelScope.launch {
             _intentFlow.emit(intent)
         }
