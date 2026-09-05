@@ -117,13 +117,15 @@ interface ITiebaApi {
     ): Flow<AgreeBean>
 
     /**
-     * 给贴子/回复点踩
+     * 取消点赞（agree_type = 2, op_type = 1）
+     *
+     * 历史命名遗留：该方法实现的是“取消赞”而非“点踩”，真正的点踩请使用 [opDisagreeFlow]
      *
      * **需登录**
      *
      * @param threadId 贴子 ID
      * @param postId 回复 ID
-     * @param opType 操作 0 = 点踩 1 = 取消点踩
+     * @param opType 操作 0 = 点赞 1 = 取消点赞
      */
     fun disagree(
         threadId: String,
@@ -132,18 +134,37 @@ interface ITiebaApi {
     ): Call<AgreeBean>
 
     /**
-     * 给贴子/回复点踩
+     * 取消点赞（agree_type = 2, op_type = 1）
+     *
+     * 历史命名遗留：该方法实现的是“取消赞”而非“点踩”，真正的点踩请使用 [opDisagreeFlow]
      *
      * **需登录**
      *
      * @param threadId 贴子 ID
      * @param postId 回复 ID
-     * @param opType 操作 0 = 点踩 1 = 取消点踩
+     * @param opType 操作 0 = 点赞 1 = 取消点赞
      */
     fun disagreeFlow(
         threadId: String,
         postId: String,
         opType: Int
+    ): Flow<AgreeBean>
+
+    /**
+     * 给主帖/楼层/楼中楼点踩或取消点踩
+     *
+     * **需登录**
+     *
+     * @param threadId 贴子 ID
+     * @param postId 回复 ID
+     * @param objType 对象类型 1 = 楼层 2 = 楼中楼 3 = 主帖
+     * @param opType 操作 0 = 点踩 1 = 取消点踩
+     */
+    fun opDisagreeFlow(
+        threadId: String,
+        postId: String,
+        objType: Int,
+        opType: Int,
     ): Flow<AgreeBean>
 
     /**
@@ -1675,6 +1696,22 @@ interface ITiebaApi {
     fun allForumGuideFlow(
         sortType: Int? = 3,
         callFrom: Int? = 3,
+    ): Flow<ForumGuideBean>
+
+    /**
+     * 关注吧列表（并行拉取前 [pageCount] 页，每页 50 个，
+     * ~~任一页 hasMore = false 即截断~~第 1 页 hasMore = false 则不请求后续页；
+     * 后续页的 hasMore = false 只截断合并、不撤回已并行发出的请求——09-03 复核与实现一致。
+     * 关注吧 51~150 个时后续空页的少量多余请求，是为首页并行秒开付出的已知代价）
+     *
+     * 供首页等只需少量数据的场景，避免全量分页拉取阻塞页面加载
+     * @param sortType 排序方式
+     * @param callFrom 1来自主页?(包含热搜数据),3 来自签到页?
+     */
+    fun forumGuideFirstPagesFlow(
+        sortType: Int? = 3,
+        callFrom: Int? = 3,
+        pageCount: Int = 4,
     ): Flow<ForumGuideBean>
 
     /**

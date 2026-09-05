@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import com.huanchengfly.tieba.post.api.TiebaApi
 import com.huanchengfly.tieba.post.api.models.CommonResponse
+import com.huanchengfly.tieba.post.api.models.ForumGuideBean
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.CommonUiEvent
@@ -26,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.flow
@@ -73,24 +75,13 @@ class HomeViewModel : BaseViewModel<HomeUiIntent, HomePartialChange, HomeUiState
         @Suppress("USELESS_CAST")
         private fun produceRefreshPartialChangeFlow(): Flow<HomePartialChange.Refresh> =
             HistoryUtil.getFlow(HistoryUtil.TYPE_FORUM, 0).zip(
-                TiebaApi.getInstance().allForumGuideFlow()
+                TiebaApi.getInstance().forumGuideFirstPagesFlow()
             ) { historyForums, forumGuideBean ->
                 val allLikeForums = forumGuideBean.likeForum
+                val forums = allLikeForums.map { it.toForum() }
 
-                // 转换 UI 实体
-                val forums = allLikeForums.map {
-                    HomeUiState.Forum(
-                        it.avatar,
-                        it.forumId.toString(),
-                        it.forumName,
-                        it.isSign == 1,
-                        it.levelId.toString(),
-                        it.hotNum
-                    )
-                }
-
-                // 全局缓存更新
-                FollowedForumsCache.updateAll(allLikeForums)
+                // 增量并入缓存,不覆盖后台全量同步已写入的数据
+                FollowedForumsCache.mergeAll(allLikeForums)
 
                 val topForumsDB = DatabaseUtil.getTopForums().map { it.forumId }.toSet()
                 val topForums = forums.filter { it.forumId in topForumsDB }
@@ -100,8 +91,57 @@ class HomeViewModel : BaseViewModel<HomeUiIntent, HomePartialChange, HomeUiState
                     historyForums
                 ) as HomePartialChange.Refresh
             }
-                .onStart { emit(HomePartialChange.Refresh.Start) }
+                // 慢速路径(§3.9):快速路径完成后再启动全量同步。
+                // 原先两条路径仅隔 300ms 并发,慢路径的 page 1-4 与快路径完全重复,
+                // 还会与首屏请求抢带宽;串行化后首屏独占带宽,全量同步在其后进行,
+                // 且缓存的写入顺序确定化(先 mergeAll 增量、后 updateAll 全量)。
+                // 仍从 page 1 完整拉取(结果对缓存权威,整体替换)而不做"从第 5 页续拉":
+                // 快路径可能提前截断(任一页 hasMore=false),且两次拉取之间翻页边界可能漂移,
+                // 盲目续拉会漏吧、极端时清空缓存。
+                // 全量同步失败仅静默跳过,不影响已渲染的首屏。
+                //
+                // ★ 快路径的 Success 必须显式转发:flatMapConcat 只下发映射流的产物,
+                // 上游值本身会被吞掉——若直接 flatMapConcat { 慢路径 },Success 永远到不了
+                // reducer,isLoading 无法清除(转圈不停),这正是真机回归发现的回归。
+                // 快路径失败(Failure)不进入本 lambda,由下游 .catch 兜住并转发,
+                // 此时跳过全量同步(失败场景不再补 54 个串行请求)。
+                .flatMapConcat { success ->
+                    flow {
+                        emit(success)
+                        emitAll(
+                            TiebaApi.getInstance().allForumGuideFlow()
+                                .map<ForumGuideBean, HomePartialChange.Refresh> { forumGuideBean ->
+                                    val allLikeForums = forumGuideBean.likeForum
+                                    val forums = allLikeForums.map { it.toForum() }
+
+                                    // 全量数据,整体替换缓存
+                                    FollowedForumsCache.updateAll(allLikeForums)
+
+                                    val topForumsDB =
+                                        DatabaseUtil.getTopForums().map { it.forumId }.toSet()
+                                    val topForums = forums.filter { it.forumId in topForumsDB }
+                                    HomePartialChange.Refresh.CacheSynced(
+                                        forums,
+                                        topForums
+                                    ) as HomePartialChange.Refresh
+                                }
+                                .catch { }
+                        )
+                    }
+                }
+                .flowOn(Dispatchers.IO)
                 .catch { emit(HomePartialChange.Refresh.Failure(it)) }
+                .onStart { emit(HomePartialChange.Refresh.Start) }
+
+        private fun ForumGuideBean.LikeForum.toForum(): HomeUiState.Forum =
+            HomeUiState.Forum(
+                avatar,
+                forumId.toString(),
+                forumName,
+                isSign == 1,
+                levelId.toString(),
+                hotNum
+            )
 
         @Suppress("USELESS_CAST")
         private fun produceRefreshHistoryPartialChangeFlow(): Flow<HomePartialChange.RefreshHistory> =
@@ -185,6 +225,11 @@ sealed interface HomePartialChange : PartialChange<HomeUiState> {
                     error = null
                 )
 
+                is CacheSynced -> oldState.copy(
+                    forums = forums.toImmutableList(),
+                    topForums = topForums.toImmutableList(),
+                )
+
                 is Failure -> oldState.copy(isLoading = false, hasLoaded = true, error = error)
                 Start -> oldState.copy(isLoading = true)
             }
@@ -195,6 +240,14 @@ sealed interface HomePartialChange : PartialChange<HomeUiState> {
             val forums: List<HomeUiState.Forum>,
             val topForums: List<HomeUiState.Forum>,
             val historyForums: List<History>,
+        ) : Refresh()
+
+        /**
+         * 后台全量同步完成,补全关注吧列表与置顶吧(不改变加载状态)
+         */
+        data class CacheSynced(
+            val forums: List<HomeUiState.Forum>,
+            val topForums: List<HomeUiState.Forum>,
         ) : Refresh()
 
         data class Failure(

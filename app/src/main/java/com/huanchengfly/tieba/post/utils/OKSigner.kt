@@ -3,8 +3,10 @@ package com.huanchengfly.tieba.post.utils
 import android.content.Context
 import android.util.Log
 import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.models.CommonResponse
 import com.huanchengfly.tieba.post.api.models.MSignBean
 import com.huanchengfly.tieba.post.api.models.SignResultBean
+import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaApiException
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorCode
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.models.SignDataBean
@@ -37,8 +39,37 @@ abstract class IOKSigner(
         return if (context.appPreferences.oksignSlowMode) {
             ThreadLocalRandom.current().nextInt(3500, 8000).toLong()
         } else {
-            2000
+            // 固定间隔是可被服务端识别的规律,加入随机抖动(移植自 PC 端脚本思路)
+            ThreadLocalRandom.current().nextInt(1500, 2500).toLong()
         }
+    }
+
+    /**
+     * 签到结果分类(移植自 PC 端 Tiebasign 脚本):
+     * - error_code 为空/0/160002(今日已签)视为成功
+     * - 其余错误码转换为 TiebaApiException,由调用方按致命/瞬态分类处理
+     */
+    protected fun classifySignFlow(signDataBean: SignDataBean): Flow<SignResultBean> =
+        signFlow(signDataBean).map { bean ->
+            val code = bean.errorCode
+            if (code.isNullOrEmpty() || code == "0" || code == SIGN_ALREADY_SIGNED) {
+                bean
+            } else {
+                throw TiebaApiException(
+                    CommonResponse(
+                        errorCode = code.toIntOrNull() ?: CommonResponse.ERROR_CODE_UNKNOWN,
+                        errorMsg = bean.errorMsg ?: "签到失败"
+                    )
+                )
+            }
+        }
+
+    companion object {
+        /** 今日已签:按成功处理 */
+        const val SIGN_ALREADY_SIGNED = "160002"
+
+        /** 致命错误码:重试无意义(吧被封禁/贴吧不存在/tbs 失效) */
+        val SIGN_FATAL_CODES = setOf("340006", "340008", "300004", "110001")
     }
 }
 
@@ -196,7 +227,14 @@ class SingleAccountSigner(
                     }
                     .flatMapConcat {
                         if (!context.appPreferences.oksignFailAutoStop) {
-                            signFlow(it).catch { e ->
+                            classifySignFlow(it)
+                                .retryWhen { cause, attempt ->
+                                    // 瞬态服务端错误重试 2 次;致命错误与网络异常交由外层报告
+                                    cause is TiebaApiException
+                                        && cause.code.toString() !in SIGN_FATAL_CODES
+                                        && attempt < 2
+                                }
+                                .catch { e ->
                                 result = false
                                 lastFailure = e
                                 mProgressListener?.onFailure(
@@ -207,7 +245,7 @@ class SingleAccountSigner(
                                 )
                                 delay(getSignDelay())
                             }
-                        } else signFlow(it)
+                        } else classifySignFlow(it)
                     }
             }
             .catch { e ->
