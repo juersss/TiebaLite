@@ -322,6 +322,12 @@ class MainActivityV2 : BaseComposeActivity() {
         }
     }
 
+    override fun onStop() {
+        // 与 onStart 的 registerReceiver 配对:不注销会钉住 Activity 且重入时重复注册
+        runCatching { unregisterReceiver(newMessageReceiver) }
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)

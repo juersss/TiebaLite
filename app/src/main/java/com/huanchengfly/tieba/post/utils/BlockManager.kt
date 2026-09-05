@@ -11,10 +11,13 @@ import com.huanchengfly.tieba.post.models.database.Block.Companion.getKeywords
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.regex.Pattern
 
 object BlockManager {
-    private val blockList: MutableList<Block> = mutableListOf()
+    // CopyOnWriteArrayList(R9-F2):写侧在 Dispatchers.IO(加/删黑名单),读侧 shouldBlock
+    // 跑在信息流过滤的 IO 上下文——普通 ArrayList 跨线程读写会 CME/撕裂;读多写少故 COW
+    private val blockList: MutableList<Block> = CopyOnWriteArrayList()
 
     val blackList: List<Block>
         get() = blockList.filter { it.category == Block.CATEGORY_BLACK_LIST }
@@ -34,10 +37,14 @@ object BlockManager {
         callback: ((Boolean) -> Unit)? = null,
     ) {
         GlobalScope.launch(Dispatchers.IO) {
-            val id = DatabaseUtil.insertBlock(block)
-            val savedBlock = block.copy(id = id)
-            blockList.add(savedBlock)
-            callback?.invoke(true)
+            // 兜底(R7-⑤,09-06 收口):DB 异常崩在裸协程上会带崩进程;
+            // 失败时 callback 不触发,UI 不谎报"已加入"
+            runCatching {
+                val id = DatabaseUtil.insertBlock(block)
+                val savedBlock = block.copy(id = id)
+                blockList.add(savedBlock)
+                callback?.invoke(true)
+            }
         }
     }
 

@@ -227,7 +227,7 @@ class OKSignService : IntentService(TAG), CoroutineScope, ProgressListener {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
         )
-        sendBroadcast(Intent(ACTION_SIGN_SUCCESS_ALL))
+        // ACTION_SIGN_SUCCESS_ALL 广播(09-06 删):应用内无接收者的死信号,外部自动化未使用(用户确认)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
     }
 
@@ -261,8 +261,6 @@ class OKSignService : IntentService(TAG), CoroutineScope, ProgressListener {
         const val TAG = "OKSignService"
         const val NOTIFICATION_CHANNEL_ID = "1"
         const val NOTIFICATION_ID = 1
-        const val ACTION_SIGN_SUCCESS_ALL =
-            "com.huanchengfly.tieba.post.service.action.SIGN_SUCCESS_ALL"
         const val ACTION_START_SIGN = "com.huanchengfly.tieba.post.service.action.ACTION_SIGN_START"
     }
 }

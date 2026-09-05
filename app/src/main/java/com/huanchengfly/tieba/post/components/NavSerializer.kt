@@ -12,7 +12,9 @@ object ThreadNavBridge {
     private val cache = LruCache<Long, ThreadInfo>(MAX_CACHE_SIZE)
 
     fun put(data: ThreadInfo): String {
-        val id = data.threadId
+        // thread_id 缺省(0)时不同帖子会折叠到同一缓存键、互相污染首帧预渲染——
+        // 兜底换一次性唯一键(缓存本为内存态,进程死亡后本就静默降级为空 ThreadInfo)
+        val id = data.threadId.takeIf { it != 0L } ?: System.nanoTime()
         cache.put(id, data)
         return id.toString()
     }

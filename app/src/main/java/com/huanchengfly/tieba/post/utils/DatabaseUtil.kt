@@ -12,8 +12,13 @@ import com.huanchengfly.tieba.post.models.database.SearchPostHistory
 import com.huanchengfly.tieba.post.models.database.TopForum
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 object DatabaseUtil {
+    /** 历史记录 upsert 串行锁(R9-F3):HistoryDao.upsert 是"查→改/插"事务,并发收集者
+     *  对同一 data 快速双击进入时两个事务都查空→重复行;Mutex 串行化消除 */
+    private val historyMutex = Mutex()
     private val appDatabase: AppDatabase by lazy {
         EntryPointAccessors.fromApplication(
             App.INSTANCE,
@@ -45,7 +50,8 @@ object DatabaseUtil {
     fun getHistoryFlowByType(type: Int, pageSize: Int = 100, offset: Int = 0): Flow<List<History>> =
         appDatabase.historyDao().getFlowByType(type, pageSize, offset)
 
-    suspend fun upsertHistory(history: History) = appDatabase.historyDao().upsert(history)
+    suspend fun upsertHistory(history: History) =
+        historyMutex.withLock { appDatabase.historyDao().upsert(history) }
 
     suspend fun deleteHistoryById(id: Long) = appDatabase.historyDao().deleteById(id)
 

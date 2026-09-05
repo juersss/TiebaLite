@@ -42,6 +42,7 @@ import com.huanchengfly.tieba.post.components.OAIDGetter
 import com.huanchengfly.tieba.post.ui.common.theme.compose.dynamicTonalPalette
 import com.huanchengfly.tieba.post.ui.common.theme.interfaces.ThemeSwitcher
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.utils.AccountUtil
 import com.huanchengfly.tieba.post.utils.AppIconUtil
 import com.huanchengfly.tieba.post.utils.BlockManager
@@ -91,6 +92,7 @@ class App : Application(), SketchFactory {
             setWebViewPath(this)
         }
         AccountUtil.init(this)
+        OpRecordStore.init(this)
         Config.init(this)
         val isSelfBuild = applicationMetaData.getBoolean("is_self_build")
         AppIconUtil.setIcon()
@@ -99,8 +101,9 @@ class App : Application(), SketchFactory {
         registerActivityLifecycleCallbacks(ClipBoardLinkDetector)
         registerActivityLifecycleCallbacks(OAIDGetter)
         thread {
-            runBlocking { BlockManager.init() }
-            EmoticonManager.init(this@App)
+            // 与 OpRecordStore.loadAndMerge(R5-F1)同口径:裸线程抛错=启动期崩进程
+            runCatching { runBlocking { BlockManager.init() } }
+            runCatching { EmoticonManager.init(this@App) }
         }
     }
 

@@ -223,11 +223,12 @@ object FileUtil {
             return null
         }
         try {
-            val `is`: InputStream = FileInputStream(file)
-            val length = `is`.available()
-            val buffer = ByteArray(length)
-            `is`.read(buffer)
-            return String(buffer, StandardCharsets.UTF_8)
+            FileInputStream(file).use { `is` ->
+                val length = `is`.available()
+                val buffer = ByteArray(length)
+                `is`.read(buffer)
+                return String(buffer, StandardCharsets.UTF_8)
+            }
         } catch (e: IOException) {
             e.printStackTrace()
         }
@@ -240,10 +241,10 @@ object FileUtil {
             return false
         }
         try {
-            val fos = FileOutputStream(file)
-            fos.write(content.toByteArray())
-            fos.flush()
-            fos.close()
+            FileOutputStream(file, append).use { fos ->
+                fos.write(content.toByteArray())
+                fos.flush()
+            }
             return true
         } catch (e: IOException) {
             e.printStackTrace()
@@ -256,15 +257,16 @@ object FileUtil {
             return false
         }
         try {
-            val fos = FileOutputStream(file)
-            val buffer = ByteArray(1024)
-            var byteCount: Int
-            while (inputStream.read(buffer).also { byteCount = it } != -1) {
-                fos.write(buffer, 0, byteCount)
+            inputStream.use { `is` ->
+                FileOutputStream(file).use { fos ->
+                    val buffer = ByteArray(1024)
+                    var byteCount: Int
+                    while (`is`.read(buffer).also { byteCount = it } != -1) {
+                        fos.write(buffer, 0, byteCount)
+                    }
+                    fos.flush()
+                }
             }
-            fos.flush()
-            fos.close()
-            inputStream.close()
             return true
         } catch (e: IOException) {
             e.printStackTrace()

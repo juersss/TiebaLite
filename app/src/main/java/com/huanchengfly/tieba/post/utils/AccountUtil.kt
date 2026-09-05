@@ -1,7 +1,6 @@
 package com.huanchengfly.tieba.post.utils
 
 import android.content.Context
-import android.content.Intent
 import android.webkit.CookieManager
 import android.widget.Toast
 import androidx.compose.runtime.Composable
@@ -22,11 +21,15 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.zip
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.UUID
@@ -34,7 +37,11 @@ import java.util.UUID
 @Stable
 object AccountUtil {
     const val TAG = "AccountUtil"
-    const val ACTION_SWITCH_ACCOUNT = "com.huanchengfly.tieba.post.action.SWITCH_ACCOUNT"
+    // ACTION_SWITCH_ACCOUNT(09-06 删):应用内无接收者的死广播信号,外部自动化亦未使用(用户确认),
+    // 按 R13 留档项处置;如未来需要对外提供切换账号事件,重新定义并加 RECEIVER_NOT_EXPORTED 守卫
+
+    /** 登录刷新单飞锁:防冷启动与开机签到并发收集 fetchAccountFlow、交错改写共享 Account(R9-F5) */
+    private val fetchAccountMutex = Mutex()
 
     val LocalAccount = staticCompositionLocalOf<Account?> { null }
     val AllAccounts = staticCompositionLocalOf<List<Account>> { emptyList() }
@@ -85,10 +92,14 @@ object AccountUtil {
     }
 
     fun newAccount(uid: String, account: Account, callback: (Long) -> Unit) {
+        // 兜底(R7-⑤,09-06 收口):裸 GlobalScope 协程体内异常默认直达 CoroutineExceptionHandler
+        // 缺失路径崩进程,与 R5-F1/R7-F1 同口径静默降级
         GlobalScope.launch(Dispatchers.IO) {
-            val newId = DatabaseUtil.upsertAccountByUid(account)
-            mutableAllAccountsState.value = DatabaseUtil.getAllAccounts()
-            callback(newId)
+            runCatching {
+                val newId = DatabaseUtil.upsertAccountByUid(account)
+                mutableAllAccountsState.value = DatabaseUtil.getAllAccounts()
+                callback(newId)
+            }
         }
     }
 
@@ -113,11 +124,11 @@ object AccountUtil {
 
     @JvmStatic
     fun switchAccount(context: Context, id: Int): Boolean {
-        context.sendBroadcast(Intent().setAction(ACTION_SWITCH_ACCOUNT))
         val account = runCatching { getAccountInfo(id) }.getOrNull() ?: return false
         mutableCurrentAccountState.value = account
+        // 兜底(R7-⑤):事件发射的下游异常不应崩在裸 GlobalScope 协程上
         GlobalScope.launch {
-            emitGlobalEvent(GlobalEvent.AccountSwitched)
+            runCatching { emitGlobalEvent(GlobalEvent.AccountSwitched) }
         }
         return context.getSharedPreferences("accountData", Context.MODE_PRIVATE).edit()
             .putInt("now", id).commit()
@@ -146,46 +157,54 @@ object AccountUtil {
         sToken: String,
         cookie: String? = null
     ): Flow<Account> {
-        return TiebaApi.getInstance()
-            .loginFlow(bduss, sToken)
-            .zip(TiebaApi.getInstance().initNickNameFlow(bduss, sToken)) { loginBean, _ ->
-                getAccountInfoByUid(loginBean.user.id)?.apply {
-                    this.bduss = bduss
-                    this.sToken = sToken
-                    this.cookie = cookie ?: getBdussCookie(bduss)
-                    updateAccount(this, loginBean)
-                } ?: Account(
-                    uid = loginBean.user.id,
-                    name = loginBean.user.name,
-                    bduss = bduss,
-                    tbs = loginBean.anti.tbs,
-                    portrait = loginBean.user.portrait,
-                    sToken = sToken,
-                    cookie = cookie ?: getBdussCookie(bduss),
+        // 单飞串行(R9-F5):冷启动与开机签到并发触发时,两个收集者会并发改写共享的
+        // Account 实例(撕裂读)。Mutex 串行化收集,登录往返不再并发交错。
+        return flow {
+            fetchAccountMutex.withLock {
+                emitAll(
+                    TiebaApi.getInstance()
+                        .loginFlow(bduss, sToken)
+                        .zip(TiebaApi.getInstance().initNickNameFlow(bduss, sToken)) { loginBean, _ ->
+                            getAccountInfoByUid(loginBean.user.id)?.apply {
+                                this.bduss = bduss
+                                this.sToken = sToken
+                                this.cookie = cookie ?: getBdussCookie(bduss)
+                                updateAccount(this, loginBean)
+                            } ?: Account(
+                                uid = loginBean.user.id,
+                                name = loginBean.user.name,
+                                bduss = bduss,
+                                tbs = loginBean.anti.tbs,
+                                portrait = loginBean.user.portrait,
+                                sToken = sToken,
+                                cookie = cookie ?: getBdussCookie(bduss),
+                            )
+                        }
+                        .zip(SofireUtils.fetchZid()) { account, zid ->
+                            account.apply { this.zid = zid }
+                        }
+                        .flatMapConcat { account ->
+                            TiebaApi.getInstance()
+                                .getUserInfoFlow(account.uid.toLong(), account.bduss, account.sToken)
+                                .map { checkNotNull(it.data_?.user) }
+                                .map { user ->
+                                    account.apply {
+                                        nameShow = user.nameShow
+                                        portrait = user.portrait
+                                    }
+                                }
+                                .catch {
+                                    emit(account)
+                                }
+                        }
+                        .onEach { account ->
+                            DatabaseUtil.upsertAccountByUid(account)
+                            mutableAllAccountsState.value = DatabaseUtil.getAllAccounts()
+                        }
+                        .flowOn(Dispatchers.IO)
                 )
             }
-            .zip(SofireUtils.fetchZid()) { account, zid ->
-                account.apply { this.zid = zid }
-            }
-            .flatMapConcat { account ->
-                TiebaApi.getInstance()
-                    .getUserInfoFlow(account.uid.toLong(), account.bduss, account.sToken)
-                    .map { checkNotNull(it.data_?.user) }
-                    .map { user ->
-                        account.apply {
-                            nameShow = user.nameShow
-                            portrait = user.portrait
-                        }
-                    }
-                    .catch {
-                        emit(account)
-                    }
-            }
-            .onEach { account ->
-                DatabaseUtil.upsertAccountByUid(account)
-                mutableAllAccountsState.value = DatabaseUtil.getAllAccounts()
-            }
-            .flowOn(Dispatchers.IO)
+        }
     }
 
     fun parseCookie(cookie: String): Map<String, String> {

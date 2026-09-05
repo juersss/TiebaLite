@@ -28,14 +28,17 @@ object AddPostRepository {
                 requireNotNull(isHide),
                 requireNotNull(isTitle)
             ).onEach {
+                // 兜底(R7-⑤,09-06 收口):裸 GlobalScope 协程体内 checkNotNull/事件发射异常会崩进程
                 GlobalScope.launch {
-                    emitGlobalEvent(
-                        GlobalEvent.AddThreadSuccess(
-                            checkNotNull(it.tid?.toLong()),
-                            checkNotNull(it.pid?.toLong()),
-                            checkNotNull(it.errorMsg),
+                    runCatching {
+                        emitGlobalEvent(
+                            GlobalEvent.AddThreadSuccess(
+                                checkNotNull(it.tid?.toLong()),
+                                checkNotNull(it.pid?.toLong()),
+                                checkNotNull(it.errorMsg),
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -63,20 +66,24 @@ object AddPostRepository {
                 replyUserId?.toString()
             )
             .onEach {
-                val newPostId = checkNotNull(it.data_?.pid?.toLongOrNull())
+                // 兜底(R7-⑤,09-06 收口):checkNotNull 对畸形响应(缺 pid)抛
+                // IllegalStateException,裸 GlobalScope 协程会把进程一起带走
                 GlobalScope.launch {
-                    if (postId != null) {
-                        emitGlobalEvent(
-                            GlobalEvent.ReplySuccess(
-                                threadId,
-                                postId,
-                                postId,
-                                subPostId,
-                                newPostId
+                    runCatching {
+                        val newPostId = checkNotNull(it.data_?.pid?.toLongOrNull())
+                        if (postId != null) {
+                            emitGlobalEvent(
+                                GlobalEvent.ReplySuccess(
+                                    threadId,
+                                    postId,
+                                    postId,
+                                    subPostId,
+                                    newPostId
+                                )
                             )
-                        )
-                    } else {
-                        emitGlobalEvent(GlobalEvent.ReplySuccess(threadId, newPostId))
+                        } else {
+                            emitGlobalEvent(GlobalEvent.ReplySuccess(threadId, newPostId))
+                        }
                     }
                 }
             }
