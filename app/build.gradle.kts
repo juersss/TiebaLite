@@ -1,4 +1,5 @@
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
 // 读取 application.properties
@@ -6,13 +7,27 @@ val appProperties = Properties().apply {
     file("${rootProject.projectDir}/application.properties").inputStream().use { load(it) }
 }
 
-// 读取 keystore.properties（如果存在）
+// 读取 keystore.properties（路径等非敏感项）。
+// 注意:口令不再存放在仓库目录内的这个文件里——签名口令的解析顺序:
+//   1) 环境变量 TIEBA_KEYSTORE_PASSWORD / TIEBA_KEY_PASSWORD
+//   2) 用户级文件 ~/.tieba-personal.properties(仓库之外,打包/分享工作区不会带走)
+//   3) 兜底:仓库内 keystore.properties(仅为向后兼容保留;正常应缺省)
+// 若三处都取不到口令且 keystore.file 已配置,构建直接失败并给出提示——
+// 绝不静默降级到 debug 签名发布 release(覆盖升级依赖固定签名)。
 val keystorePropertiesFile = file("${rootProject.projectDir}/keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
+val userKeystoreSecrets = Properties().apply {
+    val f = File(System.getProperty("user.home"), ".tieba-personal.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun keystoreSecret(key: String): String? =
+    System.getenv(if (key == "keystore.password") "TIEBA_KEYSTORE_PASSWORD" else "TIEBA_KEY_PASSWORD")
+        ?: userKeystoreSecrets.getProperty(key)
+        ?: keystoreProperties.getProperty(key)
 
 plugins {
     alias(libs.plugins.android.application)
@@ -67,6 +82,9 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        // 语言资源过滤(0ranko 同款):app 仅中文(values 默认)无本地化目录,不过滤会把
+        // AndroidX/Compose 全部 50+ 语言库资源打进 APK。zh-rCN 覆盖库的简中,en 为库默认兜底
+        resourceConfigurations.addAll(listOf("en", "zh-rCN"))
         manifestPlaceholders["is_self_build"] = "$isSelfBuild"
     }
     buildFeatures {
@@ -77,11 +95,20 @@ android {
     signingConfigs {
         val keystoreFile = keystoreProperties.getProperty("keystore.file", "")
         if (keystoreFile.isNotBlank()) {
+            val storePassword = keystoreSecret("keystore.password")
+            val keyPassword = keystoreSecret("keystore.key.password")
+            if (storePassword == null || keyPassword == null) {
+                throw GradleException(
+                    "keystore.file 已配置但签名口令缺失:请设置环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD " +
+                        "或用户级文件 ~/.tieba-personal.properties。" +
+                        "拒绝静默降级到 debug 签名发布 release。"
+                )
+            }
             create("config") {
                 storeFile = file(File(rootDir, keystoreFile))
-                storePassword = keystoreProperties.getProperty("keystore.password")
+                this.storePassword = storePassword
                 keyAlias = keystoreProperties.getProperty("keystore.key.alias")
-                keyPassword = keystoreProperties.getProperty("keystore.key.password")
+                this.keyPassword = keyPassword
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
@@ -120,8 +147,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
     }
     composeCompiler {
-        metricsDestination.set(layout.buildDirectory.dir("compose_metrics"))
-        reportsDestination.set(layout.buildDirectory.dir("compose_metrics"))
+        // Compose 稳定性报告与指标采集会显著拖慢编译(实测使 compileReleaseKotlin 从约 2m30s
+        // 增加到约 4m24s,即 +69%)。产物仅供分析用,不参与构建,故改为按需开启:
+        //   ... -PcomposeMetrics=true
+        // 输出目录:app/build/compose_metrics/
+        if (project.hasProperty("composeMetrics")) {
+            metricsDestination.set(layout.buildDirectory.dir("compose_metrics"))
+            reportsDestination.set(layout.buildDirectory.dir("compose_metrics"))
+        }
 
         stabilityConfigurationFile.set(rootProject.layout.projectDirectory.file("compose_stability_configuration.txt").asFile)
     }
@@ -140,6 +173,14 @@ android {
 
             (this as BaseVariantOutputImpl).outputFileName = fileName
         }
+    }
+}
+
+// 显式固定 Kotlin jvmTarget=17:此前仅 compileOptions 锁了 javac,Kotlin 编译随 JDK 漂移,
+// 换机/IDE 直跑(JAVA_HOME=JDK 21)会报"Inconsistent JVM-target compatibility"且误导性极强
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
