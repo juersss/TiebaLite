@@ -78,7 +78,10 @@ object RetrofitTiebaApi {
             Header.PRAGMA to { "no-cache" }
         )
     private val gsonConverterFactory = GsonConverterFactory.create()
-    private val sortAndSignInterceptor = SortAndSignInterceptor("tiebaclient!!!")
+    // 贴吧客户端请求签名盐:参与 SortAndSignInterceptor 的 md5(排序参数+此盐) 计算。
+    // 系上游 HuanCheng65/TiebaLite 沿用的固定值(社区公开),非用户凭据,不随账号变化。
+    private const val TIEBA_SIGN_SALT = "tiebaclient!!!"
+    private val sortAndSignInterceptor = SortAndSignInterceptor(TIEBA_SIGN_SALT)
 
     val NEW_TIEBA_API: NewTiebaApi by lazy {
         createJsonApi<NewTiebaApi>(
@@ -278,6 +281,7 @@ object RetrofitTiebaApi {
         )
     }
 
+    // 与 V12 实例同构,仅 UA/版本号不同:楼中楼图片内容需要 22.x 客户端身份才下发
     val OFFICIAL_PROTOBUF_TIEBA_V22_API: OfficialProtobufTiebaApi by lazy {
         createProtobufApi<OfficialProtobufTiebaApi>(
             "https://tiebac.baidu.com/",

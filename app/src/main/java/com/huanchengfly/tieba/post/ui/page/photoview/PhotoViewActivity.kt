@@ -163,7 +163,7 @@ class PhotoViewActivity : BaseComposeActivityWithParcelable<PhotoViewData>() {
                     ) {
                         val item = items[it]
                         ViewPhoto(
-                            imageUri = item.originUrl,
+                            imageUri = item.displayUrl ?: item.originUrl,
                             modifier = Modifier.fillMaxSize(),
                             onTap = {
                                 finish()

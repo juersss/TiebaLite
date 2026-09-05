@@ -112,6 +112,8 @@ class PhotoViewViewModel :
                                 picId = item.picId,
                                 originUrl = item.originUrl,
                                 url = if (item.showOriginBtn) item.url else null,
+                                // 楼中楼图片无 pb 图页可拉,优先展示与内联缩略图相同的 URL(快、命中缓存)
+                                displayUrl = item.url,
                                 overallIndex = index + 1,
                                 postId = item.postId
                             )
@@ -318,4 +320,9 @@ data class PhotoViewItem(
     val url: String?,
     val overallIndex: Int,
     val postId: Long? = null,
+    /**
+     * 优先展示的 URL(如楼中楼图片的内联 picUrl,与缩略图同源、命中缓存)。
+     * 为空时展示 [originUrl]。下载/分享仍使用 [originUrl] 保证原图质量。
+     */
+    val displayUrl: String? = null,
 )

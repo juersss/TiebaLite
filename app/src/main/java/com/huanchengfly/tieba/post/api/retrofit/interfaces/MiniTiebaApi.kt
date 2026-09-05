@@ -118,6 +118,9 @@ interface MiniTiebaApi {
         @Field("op_type") opType: Int = 0,
         @retrofit2.http.Header("client_user_token") clientUserToken: String? = AccountUtil.getUid(),
         @Field("cuid_gid") cuidGid: String = "",
+        // tbs 取登录时缓存值;失效(数字 error_code=110001)时的自愈刷新+重试收口在
+        // MixedTiebaApiImpl.opAgreeFlow 的 healInvalidTbs。
+        // 此处默认参数只提供缓存值本身,不预取——成功路径因此零额外网络往返。
         @Field("tbs") tbs: String? = AccountUtil.getLoginInfo()?.tbs,
         @Field("stoken") stoken: String? = AccountUtil.getSToken(),
     ): Flow<AgreeBean>

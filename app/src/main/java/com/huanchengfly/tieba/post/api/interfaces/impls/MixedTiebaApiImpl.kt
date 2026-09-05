@@ -2,7 +2,11 @@ package com.huanchengfly.tieba.post.api.interfaces.impls
 
 import android.os.Build
 import android.text.TextUtils
+import android.util.Log
 import com.huanchengfly.tieba.post.App
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.OpResponseLog
+import com.huanchengfly.tieba.post.api.V22ImageGateSentinel
 import com.huanchengfly.tieba.post.api.ClientVersion
 import com.huanchengfly.tieba.post.api.ForumSortType
 import com.huanchengfly.tieba.post.api.Param
@@ -130,6 +134,8 @@ import com.huanchengfly.tieba.post.api.models.web.HotMessageListBean
 import com.huanchengfly.tieba.post.api.retrofit.ApiResult
 import com.huanchengfly.tieba.post.api.retrofit.RetrofitTiebaApi
 import com.huanchengfly.tieba.post.api.retrofit.body.MyMultipartBody
+import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaApiException
+import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaException
 import com.huanchengfly.tieba.post.api.urlEncode
 import com.huanchengfly.tieba.post.models.DislikeBean
 import com.huanchengfly.tieba.post.models.MyInfoBean
@@ -138,18 +144,36 @@ import com.huanchengfly.tieba.post.toJson
 import com.huanchengfly.tieba.post.utils.AccountUtil
 import com.huanchengfly.tieba.post.utils.CuidUtils
 import com.huanchengfly.tieba.post.utils.ImageUtil
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onEach
 import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.Call
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.net.URLEncoder
+
+private const val TAG = "MixedTiebaApiImpl"
+
+/**
+ * 全量同步关注吧列表时的最大翻页页数上限
+ *
+ * 兜底防止服务端持续返回 has_more = 1 造成无限翻页（死循环 + 流量/WAF 风险）
+ */
+private const val MAX_FORUM_GUIDE_PAGES = 60
+
+/** 贴吧服务端"tbs 无效/过期"数字错误码(opAgree 路径,经数字→异常转换到达) */
+private const val TIEBA_TBS_INVALID_CODE = 110001
 
 object MixedTiebaApiImpl : ITiebaApi {
 
@@ -213,6 +237,84 @@ object MixedTiebaApiImpl : ITiebaApi {
     ): Call<AgreeBean> =
         RetrofitTiebaApi.MINI_TIEBA_API.disagree(postId, threadId, op_type = opType)
 
+    /**
+     * 给 opAgree 响应挂调试日志（OpResponseLog）：记录服务端返回的 error_code
+     * 与操作后计数 score。objId 与 UI 诊断对齐——OBJ_THREAD 用 threadId，
+     * 其余用 postId。日志失败绝不影响主流程，runCatching 兜住一切。
+     *
+     * 成功走 onEach；被 FailureResponseInterceptor 转成异常的失败走 catch
+     * （记录后原样重抛，不改变下游语义），否则"取消被拒"这类响应在诊断里隐形。
+     */
+    private fun Flow<AgreeBean>.logOpResponse(
+        threadId: String,
+        postId: String,
+        objType: Int,
+        agreeType: Int,
+        opType: Int,
+    ): Flow<AgreeBean> =
+        onEach { bean ->
+            runCatching {
+                val objId = if (objType == AgreeParams.OBJ_THREAD) threadId else postId
+                OpResponseLog.record(objType, objId.toLong(), agreeType, opType, bean)
+            }
+        }.catch { e ->
+            runCatching {
+                if (e is TiebaException) {
+                    val objId = if (objType == AgreeParams.OBJ_THREAD) threadId else postId
+                    OpResponseLog.recordFailure(
+                        objType, objId.toLong(), agreeType, opType,
+                        errorCode = e.code.toString(),
+                        errorMsg = e.message,
+                    )
+                }
+            }
+            throw e
+        }
+
+    /**
+     * opAgree 基础请求:显式 tbs(自愈重试传入新值)缺省时退回登录缓存值,
+     * 与原 MiniTiebaApi 默认参数行为一致。
+     */
+    private fun baseOpAgreeFlow(
+        threadId: String,
+        postId: String,
+        opType: Int,
+        objType: Int,
+        agreeType: Int,
+        tbs: String? = null,
+    ): Flow<AgreeBean> =
+        RetrofitTiebaApi.MINI_TIEBA_API.opAgreeFlow(
+            threadId,
+            postId,
+            opType = opType,
+            objType = objType,
+            agreeType = agreeType,
+            tbs = tbs ?: AccountUtil.getLoginInfo()?.tbs,
+        ).logOpResponse(threadId, postId, objType, agreeType, opType)
+
+    /**
+     * tbs 失效自愈(§七.6,09-06):opAgree 的 tbs 是登录时缓存值,账号长期不重登
+     * 可能失效——服务端回数字 error_code=110001,被 FailureResponseInterceptor 转成
+     * TiebaApiException。仅此码走自愈:仿 OKSigner 用 fetchAccountFlow 刷新一次
+     * (单飞互斥已内建)并重试;刷新成功顺带同步内存缓存的单字段,避免此后每次操作
+     * 都重复登录往返。其他错误原样重抛;重试仍失败按既有语义落回普通失败路径
+     * (revertPending 回滚),不会递归。成功路径零额外往返。
+     */
+    private fun Flow<AgreeBean>.healInvalidTbs(
+        retry: suspend (String?) -> Flow<AgreeBean>,
+    ): Flow<AgreeBean> =
+        catch { e ->
+            if (e is TiebaApiException && e.code == TIEBA_TBS_INVALID_CODE) {
+                val freshTbs = runCatching {
+                    AccountUtil.fetchAccountFlow().first().tbs
+                }.getOrNull()
+                freshTbs?.let { AccountUtil.getLoginInfo()?.tbs = it }
+                emitAll(retry(freshTbs ?: AccountUtil.getLoginInfo()?.tbs))
+            } else {
+                throw e
+            }
+        }
+
     override fun opAgreeFlow(
         threadId: String,
         postId: String,
@@ -220,13 +322,10 @@ object MixedTiebaApiImpl : ITiebaApi {
         objType: Int,
         agreeType: Int,
     ): Flow<AgreeBean> =
-        RetrofitTiebaApi.MINI_TIEBA_API.opAgreeFlow(
-            threadId,
-            postId,
-            opType = opType,
-            objType = objType,
-            agreeType = agreeType
-        )
+        baseOpAgreeFlow(threadId, postId, opType, objType, agreeType)
+            .healInvalidTbs { tbs ->
+                baseOpAgreeFlow(threadId, postId, opType, objType, agreeType, tbs)
+            }
 
     override fun disagreeFlow(
         threadId: String,
@@ -234,6 +333,20 @@ object MixedTiebaApiImpl : ITiebaApi {
         opType: Int
     ): Flow<AgreeBean> =
         RetrofitTiebaApi.MINI_TIEBA_API.disagreeFlow(postId, threadId, op_type = opType)
+
+    override fun opDisagreeFlow(
+        threadId: String,
+        postId: String,
+        objType: Int,
+        opType: Int,
+    ): Flow<AgreeBean> =
+        baseOpAgreeFlow(threadId, postId, opType, objType, AgreeParams.TYPE_DISAGREE)
+            .healInvalidTbs { tbs ->
+                baseOpAgreeFlow(
+                    threadId, postId, opType, objType,
+                    AgreeParams.TYPE_DISAGREE, tbs
+                )
+            }
 
     override fun forumRecommend(): Call<ForumRecommend> =
         RetrofitTiebaApi.MINI_TIEBA_API.forumRecommend()
@@ -1353,11 +1466,11 @@ object MixedTiebaApiImpl : ITiebaApi {
         mark: Int,
         lastPostId: Long?,
     ): Flow<PbPageResponse> {
-        return RetrofitTiebaApi.OFFICIAL_PROTOBUF_TIEBA_V12_API.pbPageFlow(
+        return RetrofitTiebaApi.OFFICIAL_PROTOBUF_TIEBA_V22_API.pbPageFlow(
             buildProtobufRequestBody(
                 PbPageRequest(
                     PbPageRequestData(
-                        common = buildCommonRequest(clientVersion = ClientVersion.TIEBA_V12),
+                        common = buildCommonRequest(clientVersion = ClientVersion.TIEBA_V22),
                         kz = threadId,
                         pid = postId,
                         pn = page,
@@ -1405,9 +1518,16 @@ object MixedTiebaApiImpl : ITiebaApi {
                         with_floor = 1
                     )
                 ),
-                clientVersion = ClientVersion.TIEBA_V12
+                clientVersion = ClientVersion.TIEBA_V22
             )
-        )
+        ).onEach { response ->
+            // V22 门控哨兵(只取证不处置):楼中楼图退回 '[图片]' 占位时打 WARN,见 V22ImageGateSentinel
+            runCatching {
+                val subs = response.data_?.post_list.orEmpty()
+                    .flatMap { it.sub_post_list?.sub_post_list.orEmpty() }
+                V22ImageGateSentinel.report("pb/page", subs)
+            }
+        }
     }
 
     override fun pbFloorFlow(
@@ -1437,7 +1557,12 @@ object MixedTiebaApiImpl : ITiebaApi {
                 clientVersion = ClientVersion.TIEBA_V22,
                 needSToken = false
             )
-        )
+        ).onEach { response ->
+            // V22 门控哨兵(只取证不处置),同 pbPageFlow
+            runCatching {
+                V22ImageGateSentinel.report("pb/floor", response.data_?.subpost_list.orEmpty())
+            }
+        }
     }
 
     override fun searchSuggestionsFlow(keyword: String, isForum: Boolean): Flow<SearchSugResponse> {
@@ -1673,7 +1798,7 @@ object MixedTiebaApiImpl : ITiebaApi {
         var finalBean: ForumGuideBean? = null
         val allLikeForums = mutableListOf<ForumGuideBean.LikeForum>()
 
-        while (hasMore) {
+        while (hasMore && currentPage < MAX_FORUM_GUIDE_PAGES) {
             val response = forumGuideFlow(
                 sortType = sortType,
                 callFrom = callFrom,
@@ -1684,16 +1809,86 @@ object MixedTiebaApiImpl : ITiebaApi {
             if (finalBean == null) {
                 finalBean = response
             }
+            // 空列表保护:服务端一直返回 has_more = 1 却不给数据时直接退出,避免空转刷接口
+            if (response.likeForum.isEmpty()) {
+                break
+            }
             response.likeForum.let { allLikeForums.addAll(it) }
             hasMore = response.likeForumHasMore == true
             currentPage++
         }
+        if (hasMore) {
+            Log.w(TAG, "allForumGuideFlow: 已达最大翻页上限 $MAX_FORUM_GUIDE_PAGES,提前结束全量同步")
+        }
 
         finalBean?.apply {
-            this.likeForum = allLikeForums
+            // toList() 快照,避免下游持有可变列表引用
+            this.likeForum = allLikeForums.toList()
         }?.let {
             emit(it)
         }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * 关注吧列表（并行拉取前 [pageCount] 页，每页 50 个）
+     *
+     * 供首页等只需要少量关注吧数据的场景使用：
+     * 全量分页拉取（allForumGuideFlow）在关注吧数量很大时会发起大量串行请求，
+     * 严重阻塞页面加载。这里改为并行请求固定的前几页，任一页 hasMore = false 即截断。
+     */
+    override fun forumGuideFirstPagesFlow(
+        sortType: Int?,
+        callFrom: Int?,
+        pageCount: Int,
+    ): Flow<ForumGuideBean> = flow {
+        // 先拉第 1 页,仅当还有更多时才并发拉后续页,避免关注吧较少时发出空请求
+        val firstPage = forumGuideFlow(
+            sortType = sortType,
+            callFrom = callFrom,
+            pageNo = 1,
+            resNum = 50,
+            topForumNum = 0
+        ).first()
+
+        val restPages = if (firstPage.likeForumHasMore == true && pageCount > 1) {
+            coroutineScope {
+                (2..pageCount).map { page ->
+                    async {
+                        try {
+                            forumGuideFlow(
+                                sortType = sortType,
+                                callFrom = callFrom,
+                                pageNo = page,
+                                resNum = 50,
+                                topForumNum = 0
+                            ).first()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                }.map { it.await() }
+            }
+        } else {
+            emptyList()
+        }
+
+        val allLikeForums = mutableListOf<ForumGuideBean.LikeForum>()
+        allLikeForums.addAll(firstPage.likeForum)
+        // restPages 下标 0 对应第 2 页,故页码为 index + 2
+        for ((index, response) in restPages.withIndex()) {
+            if (response == null) {
+                // 单页失败不再中断:后续页可能已成功取回,跳过本页继续合并,避免静默丢数据
+                Log.w(TAG, "forumGuideFirstPagesFlow: 第 ${index + 2} 页拉取失败,跳过")
+                continue
+            }
+            allLikeForums.addAll(response.likeForum)
+            if (response.likeForumHasMore != true) break
+        }
+
+        // toList() 快照,避免下游持有可变列表引用
+        emit(firstPage.copy(likeForum = allLikeForums.toList()))
     }.flowOn(Dispatchers.IO)
 
     override fun addPollPost(forumId: Long?, threadId: Long, option: String): Flow<CommonResponse> =

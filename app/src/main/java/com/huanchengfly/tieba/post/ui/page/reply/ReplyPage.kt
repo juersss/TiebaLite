@@ -85,6 +85,7 @@ import androidx.core.widget.addTextChangedListener
 import com.github.panpf.sketch.compose.AsyncImage
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.huanchengfly.tieba.post.App
+import com.huanchengfly.tieba.post.BuildConfig
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
@@ -249,6 +250,16 @@ internal fun ReplyPageContent(
         return editTextView?.text?.toString().orEmpty()
     }
 
+    // 回复正文统一构建:楼中楼回复带"回复 #(reply,...) :"前缀。
+    // 无图发送与"上传成功后发送"(见 UploadSuccess 分支)必须走同一份逻辑,
+    // 否则带图回复楼中楼会丢前缀(09-06 接通楼中楼发图时发现原两处不一致)。
+    fun buildReplyBody(): String =
+        if (subPostId == null || subPostId == 0L) {
+            getText()
+        } else {
+            "回复 #(reply, ${replyUserPortrait}, ${replyUserName}) :${getText()}"
+        }
+
     fun setText(text: String) {
         if (editTextView != null) {
             editTextView?.setText(StringUtil.getEmoticonContent(editTextView!!, text))
@@ -279,7 +290,9 @@ internal fun ReplyPageContent(
             .sample(500)
             .distinctUntilChanged()
             .collect {
-                Log.i("ReplyPage", "collect: $it")
+                // $it 是用户正在输入的草稿正文,全量 toString 进日志属敏感泄露(R6-F2);
+                // debug 下只打长度,够定位草稿保存问题
+                if (BuildConfig.DEBUG) Log.d("ReplyPage", "draft collect: len=${it.length}")
                 if (!replySuccess) {
                     DatabaseUtil.saveDraft(hash, it)
                 }
@@ -327,7 +340,7 @@ internal fun ReplyPageContent(
                 }
             viewModel.send(
                 ReplyUiIntent.Send(
-                    "${getText()}\n$imageContent",
+                    "${buildReplyBody()}\n$imageContent",
                     forumId,
                     forumName,
                     threadId,
@@ -602,7 +615,11 @@ internal fun ReplyPageContent(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            if (postId == null || postId == 0L) {
+            // 图片按钮场景门控(§七.3 二期接入,09-06):原本仅"发表新楼层/发主题"(postId 空)可见;
+            // 楼中楼回复(subPostId 非空)同样放行——上传/发送链路本就支持 subPostId+图片,只差此处入口。
+            // "回复到某楼层"(postId 非空且无 subPostId)维持隐藏(上游原行为,未获放开指令)。
+            // 注意:百度服务端是否接受楼中楼带图未经真机验证,失败表现为发送报错,不影响其他功能。
+            if (postId == null || postId == 0L || (subPostId != null && subPostId != 0L)) {
                 IconButton(
                     onClick = { switchToPanel(IMAGE) },
                     modifier = Modifier.size(24.dp)
@@ -649,16 +666,11 @@ internal fun ReplyPageContent(
                 )
             } else {
                 IconButton(
-                    onClick = {
-                        val replyContent = if (subPostId == null || subPostId == 0L) {
-                            getText()
-                        } else {
-                            "回复 #(reply, ${replyUserPortrait}, ${replyUserName}) :${getText()}"
-                        }
-                        if (selectedImageList.isEmpty()) {
-                            viewModel.send(
-                                ReplyUiIntent.Send(
-                                    content = replyContent,
+                onClick = {
+                    if (selectedImageList.isEmpty()) {
+                        viewModel.send(
+                            ReplyUiIntent.Send(
+                                content = buildReplyBody(),
                                     forumId = forumId,
                                     forumName = forumName,
                                     threadId = threadId,
