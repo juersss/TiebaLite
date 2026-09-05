@@ -84,7 +84,6 @@ interface OfficialProtobufTiebaApi {
     @POST("/c/f/pb/floor?cmd=302002&format=protobuf")
     fun pbFloorFlow(
         @Body body: MyMultipartBody,
-        @Header("User-Agent") userAgent: String? = null,
     ): Flow<PbFloorResponse>
 
     @POST("/c/c/post/add?cmd=309731&format=protobuf")
