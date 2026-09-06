@@ -159,7 +159,12 @@ class PhotoViewActivity : BaseComposeActivityWithParcelable<PhotoViewData>() {
                 Box(modifier = Modifier.fillMaxSize()) {
                     HorizontalPager(
                         state = pagerState,
-                        key = { "${items[it].picId}_${items[it].postId}" }
+                        // key 必须逐图唯一:楼中楼多图走本地列表时,服务端给同组图片下发的
+                        // pic_id 是同一占位值(实测为 "downloadfile")且 postId 为 null,
+                        // 旧 key "picId_postId" 会整组撞车——翻页即 IllegalArgumentException。
+                        // overallIndex:楼中楼本地列表按 1..n 赋值,pb 路径为服务端全局图序,
+                        // LoadPrev/LoadMore 合并时每个条目保有自己的 overallIndex——唯一且稳定
+                        key = { items[it].overallIndex.toString() }
                     ) {
                         val item = items[it]
                         ViewPhoto(
