@@ -25,7 +25,7 @@
 
 ## 个人版改动一览
 
-相对上游 `4.0-dev` 的全部改动按主题分为七个提交（在提交历史中可逐一审阅）：
+相对上游 `4.0-dev` 的全部改动按主题分为若干提交（在提交历史中可逐一审阅）：
 
 | 提交 | 内容 |
 |---|---|
@@ -47,12 +47,13 @@
 ## 测试
 
 ```bash
-./gradlew.bat :app:testDebugUnitTest   # 132 个 JVM 用例，无需设备
+./gradlew.bat :app:testDebugUnitTest   # 154 个 JVM 用例，无需设备
 ./gradlew.bat :app:assembleRelease     # 完整发布构建（R8 + 签名 + lintVital）
 ```
 
 覆盖：差分数学 / 状态机时序 / rebase 语义 / 并发原子性 / 列表页 reducer no-op /
-V22 门控哨兵 / 限流器 / WebView 宿主安全 / 首页分页。关键修复均经过证伪验证
+V22 门控哨兵 / 限流器 / WebView 宿主安全 / 首页分页 / 赞踩在途竞态与账号隔离 /
+选图 URI 解析 / 话题置顶防御性提取 / 浏览进度锚点。关键修复均经过证伪验证
 （临时回退修复 → 对应用例恰好失败 → 还原复验）。
 
 赞踩与楼中楼图片的真机行为（限流提示、杀进程重进、图片门控）无法用 JVM 单测覆盖，
@@ -63,11 +64,15 @@ V22 门控哨兵 / 限流器 / WebView 宿主安全 / 首页分页。关键修�
 - JDK 17（`gradle.properties` 与 kotlin jvmTarget 已锁定）
 - Android SDK platform-36 + build-tools 36.0.0
 - 签名：`keystore.properties` 与口令文件**不入库**（见 .gitignore），口令解析顺序为
-  环境变量 `TIEBA_KEYSTORE_PASSWORD`/`TIEBA_KEY_PASSWORD` → `~/.tieba-personal.properties`，
-  全缺时构建直接失败（拒绝静默降级 debug 签名）
+  环境变量 `TIEBA_KEYSTORE_PASSWORD`/`TIEBA_KEY_PASSWORD` → `~/.tieba-personal.properties`。
+  缺签名凭据时**仅 release 打包/发布任务**在执行期失败（拒绝静默降级 debug 签名）；
+  Debug 构建、JVM 单测与 IDE 同步不受影响（纯克隆可正常调试）
 
 ## 上游与同步
 
 上游 [zzc10086/TiebaLite](https://github.com/zzc10086/TiebaLite) 持续活跃维护；
-本 fork 定期合并上游提交（GitHub 页面 "Sync fork" 即可）。协议层文件（`ProtobufRequest.kt`
-等）刻意保持与上游零差异以降低合并成本，个人改动集中在赞踩系统、UI 层与构建治理。
+本 fork 定期合并上游提交（GitHub 页面 "Sync fork" 即可）。pb 编解码核心 `ProtobufRequest.kt`
+刻意保持与上游零差异以降低合并成本；赞踩系统在此基础上**新增**了 `Agree.proto` 与
+`models/protos/AgreeOp.kt`（差分模型），并**修改了** `api/` 传输层若干文件（`RetrofitTiebaApi.kt`
+凭据接口 HTTPS 迁移 / `CleartextCredentialGuardInterceptor.kt` 明文凭据拦截 / 部分接口与模型）。
+同步这些目录时以本 fork 版本为准，勿盲目 `git checkout --theirs`。
