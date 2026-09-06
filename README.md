@@ -4,8 +4,10 @@
     <a href="https://github.com/zzc10086/TiebaLite">
         <img alt="Forked from" src="https://img.shields.io/badge/forked%20from-zzc10086%2FTiebaLite-blue">
     </a>
-    <img alt="Version" src="https://img.shields.io/badge/version-4.0.0--personal.25-orange">
-    <img alt="Tests" src="https://img.shields.io/badge/unit%20tests-132%20passing-brightgreen">
+    <img alt="Version" src="https://img.shields.io/badge/version-4.0.0--personal.26-orange">
+    <a href="https://github.com/juersss/TiebaLite/actions/workflows/test.yml">
+        <img alt="Unit tests" src="https://github.com/juersss/TiebaLite/actions/workflows/test.yml/badge.svg">
+    </a>
     <img alt="AI maintained" src="https://img.shields.io/badge/maintenance-AI%20assisted-informational">
 </p>
 

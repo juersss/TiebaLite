@@ -1,11 +1,18 @@
 name: Build, Deploy
 
 # on: [ push, pull_request ]
+# 外部审查-7 修订:本工作流承载 tag 发布;普通分支的日常单测校验由 test.yml 承担。
+# 手动 dispatch 到普通分支时不再尝试打包 release——签名凭据仅 tag 构建可用,
+# 而 release 签名缺配置会在执行期 fail-closed(外部审查-2),此前"生成签名文件的
+# 步骤因只允许 tag 被跳过,后面仍执行 assembleRelease"的组合必然失败。
 on:
   workflow_dispatch:
   push:
     tags:
       - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,18 +20,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           java-version: "17"
           distribution: "zulu"
 
+      - name: Set up Android SDK components
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+
       - name: Decode Keystore
         id: decode_keystore
         if: startsWith(github.ref, 'refs/tags/')
-        uses: timheuer/base64-to-file@v2
+        uses: timheuer/base64-to-file@dfa5a5dd38803cb4f5c3a081eeb28e8362d43e9c # v2
         with:
           fileName: ${{ vars.RELEASE_KEYSTORE }}
           fileDir: ${{ github.workspace }}
@@ -41,7 +54,7 @@ jobs:
           fi
 
       # fail-closed 配套(外部审查 1.1):secrets 未配置时上方步骤不会生成 keystore.properties,
-      # 而 app/build.gradle.kts 的 release 签名已改为缺配置即抛错——此处先断言给出明确报错,
+      # 而 app/build.gradle.kts 的 release 签名在执行期 fail-closed——此处先断言给出明确报错,
       # 避免静默产出 debug 签名的 release 包并发布
       - name: Assert keystore.properties present (fail-closed)
         if: startsWith(github.ref, 'refs/tags/')
@@ -52,7 +65,7 @@ jobs:
           }
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
           cache-cleanup: always
           cache-read-only: ${{ github.ref != 'refs/heads/master' && github.ref != 'refs/heads/4.0-dev' }}
@@ -61,34 +74,39 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
 
-      - name: Build with Gradle
+      # 外部审查-7:分支 dispatch 不具备签名凭据,只构建 debug 包做冒烟验证;
+      # tag 构建才有 release 打包
+      - name: Build debug APK (branch validation)
+        if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
+        run: ./gradlew assembleDebug
+
+      - name: Build with Gradle (release)
+        if: startsWith(github.ref, 'refs/tags/')
         run: ./gradlew assembleRelease
 
       - name: Read Output Metadata
         id: read_output_metadata
-        uses: juliangruber/read-file-action@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: juliangruber/read-file-action@271ff311a4947af354c6abcd696a306553b9ec18 # v1
         with:
           path: ./app/build/outputs/apk/release/output-metadata.json
           trim: true
 
-      - name: Upload Release Package
-        env:
-          version_code: ${{ fromJSON(steps.read_output_metadata.outputs.content).elements[0].versionCode }}
-          version_name: ${{ fromJSON(steps.read_output_metadata.outputs.content).elements[0].versionName }}
-        uses: actions/upload-artifact@v4
+      - name: Upload Debug Package
         if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: "release-${{ env.version_name }}(${{ env.version_code }})"
-          path: ./app/build/outputs/apk/release
+          name: "debug-${{ github.run_number }}"
+          path: ./app/build/outputs/apk/debug
 
       - name: Upload Release Package to public
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ./app/build/outputs/apk/release/*.apk
 
       - name: Upload Mapping to public
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ./app/build/outputs/mapping/release/mapping.txt

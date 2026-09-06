@@ -29,6 +29,10 @@ fun keystoreSecret(key: String): String? =
         ?: userKeystoreSecrets.getProperty(key)
         ?: keystoreProperties.getProperty(key)
 
+// release 正式签名不可用的原因(配置期收集,执行期裁决)。配置期只记录不抛错,
+// 具体失败时机见文件末尾的 taskGraph.whenReady(外部审查-2)。
+var signingUnavailableReason: String? = null
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -94,25 +98,36 @@ android {
     }
     signingConfigs {
         val keystoreFile = keystoreProperties.getProperty("keystore.file", "")
-        if (keystoreFile.isNotBlank()) {
+        if (keystoreFile.isBlank()) {
+            // 外部审查-2:纯克隆(无 keystore.properties)不再被视为配置期致命错误,
+            // 仅记录原因供执行期裁决(Debug 回落 debug 签名,release 由 whenReady 拦截)
+            signingUnavailableReason =
+                "keystore.properties 缺失或未配置 keystore.file。请配置 keystore.properties" +
+                    "(keystore.file/alias)与口令(环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD" +
+                    " 或 ~/.tieba-personal.properties),拒绝静默降级 debug 签名。"
+        } else {
             val storePassword = keystoreSecret("keystore.password")
             val keyPassword = keystoreSecret("keystore.key.password")
             if (storePassword == null || keyPassword == null) {
-                throw GradleException(
+                // 外部审查-2:口令缺失不再在配置期抛错——buildTypes 的任何代码在
+                // 配置阶段对 assembleDebug/testDebugUnitTest/IDE 同步同样会执行,
+                // 配置期抛错会把纯克隆环境的 Debug/单测一并拦死。此处只记录原因,
+                // fail-closed 挪到执行期裁决(见文件末尾 taskGraph.whenReady)
+                signingUnavailableReason =
                     "keystore.file 已配置但签名口令缺失:请设置环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD " +
                         "或用户级文件 ~/.tieba-personal.properties。" +
                         "拒绝静默降级到 debug 签名发布 release。"
-                )
-            }
-            create("config") {
-                storeFile = file(File(rootDir, keystoreFile))
-                this.storePassword = storePassword
-                keyAlias = keystoreProperties.getProperty("keystore.key.alias")
-                this.keyPassword = keyPassword
-                enableV1Signing = true
-                enableV2Signing = true
-                enableV3Signing = true
-                enableV4Signing = true
+            } else {
+                create("config") {
+                    storeFile = file(File(rootDir, keystoreFile))
+                    this.storePassword = storePassword
+                    keyAlias = keystoreProperties.getProperty("keystore.key.alias")
+                    this.keyPassword = keyPassword
+                    enableV1Signing = true
+                    enableV2Signing = true
+                    enableV3Signing = true
+                    enableV4Signing = true
+                }
             }
         }
     }
@@ -137,17 +152,13 @@ android {
             isDebuggable = false
             isJniDebuggable = false
             multiDexEnabled = true
-            // fail-closed(外部审查 1.1,release 限定):keystore.properties 整体缺失时
-            // config 签名根本不会创建——此前静默回落 debug 签名,与"拒绝静默降级"的设计
-            // 意图相悖(装过正式包的设备将无法再覆盖升级)。release 缺签名配置直接失败;
-            // debug 不可随之抛错,否则纯克隆环境连本地调试包都出不来
+            // fail-closed(外部审查 1.1/2):keystore.properties 整体缺失时 config 签名
+            // 不会创建——此前静默回落 debug 签名发布 release,与"拒绝静默降级"的设计
+            // 意图相悖(装过正式包的设备将无法再覆盖升级)。校验不在本配置块内抛错
+            // (配置期抛错会连累 assembleDebug/单测/IDE 同步,见外部审查-2),
+            // 而是先回落 debug 让配置总能完成,执行期由 taskGraph.whenReady 拦截
             signingConfig = signingConfigs.findByName("config")
-                ?: throw GradleException(
-                    "release 构建缺少签名配置:keystore.properties 缺失或签名口令未配置。" +
-                        "请配置 keystore.properties(keystore.file/alias)与口令" +
-                        "(环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD 或" +
-                        " ~/.tieba-personal.properties),拒绝静默降级 debug 签名。"
-                )
+                ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -323,4 +334,39 @@ dependencies {
     //ksp(libs.com.jakewharton.butterknife.compiler)
 
     // ksp(libs.kotlin.metadata.jvm)
+}
+
+// ── release 签名 fail-closed(执行期裁决,外部审查-2)────────────────────────────
+// Gradle 的配置阶段对所有任务一视同仁:原先在 buildTypes { release { ... } } 里
+// `?: throw GradleException(...)` 会让纯克隆环境(无 keystore.properties)的
+// :app:assembleDebug、:app:testDebugUnitTest 和 IDE 同步全部在配置期失败,与
+// "debug 允许回落:纯克隆也能出本地调试包"的注释直接矛盾。现将校验改为
+// validateReleaseSigning 任务,只在真正产出 release 产物的构建里执行失败,
+// 且失败信息给出准确原因(signingUnavailableReason)。
+// 验收口径:无凭据 assembleDebug 成功、无凭据 assembleRelease 失败、有效签名
+// assembleRelease 成功。
+val releaseShippingTasks = setOf(
+    "assembleRelease",
+    "bundleRelease",
+    "packageRelease",
+)
+// 校验任务挂在所有"产出已签名 release 产物"的任务上(dependsOn 保证先于其执行):
+// 校验失败 → 这些任务不会执行,不会产出 debug 签名的 release 包。
+// 签名不可用原因在配置期捕获为任务输入,执行期才抛错。
+tasks.register("validateReleaseSigning") {
+    val unavailableReason = signingUnavailableReason
+    outputs.upToDateWhen { false } // 校验必须每次真跑,不得 FROM-CACHE 跳过
+    doLast {
+        if (unavailableReason != null) {
+            throw GradleException(unavailableReason)
+        }
+    }
+}
+listOf("assembleRelease", "bundleRelease", "packageRelease").forEach { taskName ->
+    tasks.matching { it.name == taskName }.configureEach {
+        dependsOn("validateReleaseSigning")
+    }
+}
+tasks.matching { it.name.startsWith("publishRelease") }.configureEach {
+    dependsOn("validateReleaseSigning")
 }
