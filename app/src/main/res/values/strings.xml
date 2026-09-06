@@ -211,6 +211,8 @@
     <string name="tip_touch_to_view">轻按以查看</string>
     <string name="title_signing_progress">%1$s正在签到中 (%2$d/%3$d)</string>
     <string name="text_oksign_done">共签到 %1$d 个吧</string>
+    <string name="text_oksign_list_truncated">，签到列表不完整（部分关注吧未获取，可重试）</string>
+    <string name="tip_topic_pinned">置顶</string>
     <string name="summary_copy_bduss">请勿泄露，否则可能会导致您的账号被盗用</string>
 
     <string name="title_share_pic">分享图片</string>

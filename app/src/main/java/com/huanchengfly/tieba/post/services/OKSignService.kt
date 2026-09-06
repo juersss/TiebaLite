@@ -40,6 +40,9 @@ class OKSignService : IntentService(TAG), CoroutineScope, ProgressListener {
         NotificationManagerCompat.from(this)
     }
 
+    /** 本次正在运行的签到器(外部审查-截断提示:onFinish 需读取列表截断标记) */
+    private var activeSigner: SingleAccountSigner? = null
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand")
         if (intent?.action == ACTION_START_SIGN) {
@@ -65,9 +68,11 @@ class OKSignService : IntentService(TAG), CoroutineScope, ProgressListener {
                         AccountUtil.getLoginInfo()!!
                     )
                         .apply {
+                            activeSigner = this
                             setProgressListener(this@OKSignService)
                         }
                         .start()
+                    activeSigner = null
                 }
             } else {
                 updateNotification(
@@ -217,12 +222,16 @@ class OKSignService : IntentService(TAG), CoroutineScope, ProgressListener {
     }
 
     override fun onFinish(success: Boolean, signedCount: Int, total: Int) {
+        // 外部审查-截断提示:关注吧列表被截断时签到列表缺尾部,"成功 N 个"不完整,
+        // 在完成通知里明示,与 SingleAccountSigner 的截断日志同源
+        val truncatedHint =
+            if (activeSigner?.listTruncated == true) getString(R.string.text_oksign_list_truncated) else ""
         updateNotification(
             getString(R.string.title_oksign_finish),
             if (total > 0) getString(
                 R.string.text_oksign_done,
                 signedCount
-            ) else getString(R.string.text_oksign_no_signable),
+            ) + truncatedHint else getString(R.string.text_oksign_no_signable),
             packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }

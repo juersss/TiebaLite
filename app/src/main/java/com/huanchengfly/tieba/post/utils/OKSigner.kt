@@ -133,6 +133,13 @@ class SingleAccountSigner(
 
     var lastFailure: Throwable? = null
 
+    /**
+     * 关注吧列表是否被截断(外部审查-截断提示):截断时签到列表缺尾部,
+     * "成功 N 个"不能当作完整结果——完成通知会据此追加"列表不完整"提示。
+     */
+    var listTruncated: Boolean = false
+        private set
+
     private var mProgressListener: ProgressListener? = null
 
     fun setProgressListener(listener: ProgressListener?): SingleAccountSigner {
@@ -160,6 +167,7 @@ class SingleAccountSigner(
                     // 截断保护(外部审查 v2-R1):全量同步被截断时,签到列表缺尾部——
                     // 照常签已有部分,但必须留日志避免静默漏签
                     Log.w(TAG, "全量同步被截断(${forumGuideBean.likeForum.size} 个吧),本次签到列表不完整")
+                    listTruncated = true
                 }
                 val useMSign = context.appPreferences.oksignUseOfficialOksign
                 val mSignLevel = getForumListBean.level.toInt()
