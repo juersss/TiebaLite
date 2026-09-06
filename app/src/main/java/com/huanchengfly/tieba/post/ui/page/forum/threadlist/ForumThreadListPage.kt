@@ -26,7 +26,13 @@ import androidx.compose.material.Text
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -36,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.utils.DebugTraceLog
+import com.huanchengfly.tieba.post.utils.debugTraceForumList
 import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.protos.OriginThreadInfo
 import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
@@ -273,18 +281,54 @@ fun ForumThreadListPage(
     val navigator = LocalNavigator.current
     val snackbarHostState = LocalSnackbarHostState.current
 
+    // DBG-TRACE:吧列表进出/滚动进度/列表变更对账(诊断"进度偶尔回退",修复后移除)
+    val traceTag = if (isGood) "GOOD_LIST[$forumName]" else "LATEST_LIST[$forumName]"
+
+    // ── 浏览进度保持(生产修复,勿随 DBG-TRACE 一并移除;仅下方 log 行属诊断)──────
+    // 病根(trace_20260907_030646.log 行 909 实证):从帖子页返回,saveable 恢复的
+    // 滚动索引遇上"数据晚一帧"的空列表测量,被钳回顶部(27/1065 → 0)。
+    // 对策:滚动时持续记录锚点(锚点帖 id+偏移),离开时暂存;数据落地后按锚点帖
+    // 重新定位(与索引数字无关,不受空帧影响)。
+    // 行为约定(2026-09-07 用户拍板):退主页再重进 = 新浏览归零(FirstLoad 时丢弃
+    // 锚点);导航栈内返回 = 恢复位置。
+    val browseCacheKey = ForumBrowseCache.key(forumName, isGood, if (isGood) -1 else getSortType(context, forumName))
+    var lastAnchor by remember { mutableStateOf<ForumBrowseCache.Anchor?>(null) }
+    LaunchedEffect(lazyListState) {
+        snapshotFlow { lazyListState.firstVisibleItemIndex }.collect {
+            val first = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()
+            val key = first?.key
+            if (key is Long) {
+                lastAnchor = ForumBrowseCache.Anchor(key, lazyListState.firstVisibleItemScrollOffset)
+            }
+        }
+    }
+    DisposableEffect(lazyListState) {
+        onDispose {
+            ForumBrowseCache.markPendingRestore(browseCacheKey, lastAnchor)
+        }
+    }
+
     LazyLoad(loaded = viewModel.initialized) {
-        viewModel.send(getFirstLoadIntent(context, forumName, isGood))
+        val firstLoadIntent = getFirstLoadIntent(context, forumName, isGood)
+        DebugTraceLog.log(traceTag, "SEND $firstLoadIntent")
+        // 全新进入 = 新的一次浏览(用户拍板):丢弃旧锚点,从头开始
+        ForumBrowseCache.consumeRestoreAnchor(browseCacheKey)
+        viewModel.send(firstLoadIntent)
         viewModel.initialized = true
     }
     onGlobalEvent<ForumThreadListUiEvent.Refresh>(
         filter = { it.isGood == isGood },
     ) {
+        DebugTraceLog.log(
+            traceTag,
+            "GOT RefreshEvent sortType=${it.sortType} preserveList=${it.preserveList}"
+        )
         viewModel.send(getRefreshIntent(context, forumName, isGood, it.sortType, preserveList = it.preserveList))
     }
     onGlobalEvent<ForumThreadListUiEvent.BackToTop>(
         filter = { it.isGood == isGood },
     ) {
+        DebugTraceLog.log(traceTag, "GOT BackToTop → animateScrollToItem(0)")
         lazyListState.animateScrollToItem(0)
     }
     viewModel.onEvent<ForumThreadListUiEvent.AgreeFail> {
@@ -347,9 +391,34 @@ fun ForumThreadListPage(
         refreshing = isRefreshing,
         // 下拉刷新保留已加载的旧列表(新帖合并到顶部),用户当前浏览位置不被顶走
         onRefresh = {
+            DebugTraceLog.log(traceTag, "SEND Refresh(pull-to-refresh) preserveList=true")
             viewModel.send(getRefreshIntent(context, forumName, isGood, preserveList = true))
         }
     )
+    // DBG-TRACE:列表内容变更对账 + 位置快照(滚动记录在钩子内)
+    debugTraceForumList(
+        traceTag,
+        lazyListState,
+        threadList,
+        isRefreshing,
+        isLoadingMore,
+        currentPage
+    )
+    // RESTORE(生产修复,勿随 DBG-TRACE 移除):列表数据落地后按锚点帖恢复滚动位置,
+    // 只消费一次。saveable 恢复的索引可能已被空帧钳掉,这里按"锚点帖"重新定位,
+    // 与索引无关,不受首屏数据晚到影响。精品区不参与(重新开始语义)
+    LaunchedEffect(threadList) {
+        if (isGood || threadList.isEmpty()) return@LaunchedEffect
+        val anchor = ForumBrowseCache.consumeRestoreAnchor(browseCacheKey) ?: return@LaunchedEffect
+        val listIndex = threadList.indexOfFirst { it.thread.get { id } == anchor.key }
+        if (listIndex >= 0) {
+            val lazyIndex = listIndex + if (forumRuleTitle != null) 1 else 0
+            DebugTraceLog.log(traceTag, "RESTORE anchor=${anchor.key} → lazyIndex=$lazyIndex offset=${anchor.offset}")
+            lazyListState.scrollToItem(lazyIndex, anchor.offset)
+        } else {
+            DebugTraceLog.log(traceTag, "RESTORE miss anchor=${anchor.key}(不在列表中),放弃")
+        }
+    }
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -376,16 +445,16 @@ fun ForumThreadListPage(
             LoadMoreLayout(
                 isLoading = isLoadingMore,
                 onLoadMore = {
-                    viewModel.send(
-                        getLoadMoreIntent(
-                            context,
-                            forumId,
-                            forumName,
-                            currentPage,
-                            threadListIds,
-                            isGood
-                        )
+                    val loadMoreIntent = getLoadMoreIntent(
+                        context,
+                        forumId,
+                        forumName,
+                        currentPage,
+                        threadListIds,
+                        isGood
                     )
+                    DebugTraceLog.log(traceTag, "SEND $loadMoreIntent")
+                    viewModel.send(loadMoreIntent)
                 },
                 loadEnd = !hasMore,
                 lazyListState = lazyListState,
@@ -396,6 +465,7 @@ fun ForumThreadListPage(
                     state = lazyListState,
                     items = threadList,
                     onItemClicked = {
+                        DebugTraceLog.log(traceTag, "NAVIGATE thread=${it.threadId}")
                         navigator.navigate(
                             ThreadPageDestination(
                                 it.threadId,

@@ -131,6 +131,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.rememberMenuState
 import com.huanchengfly.tieba.post.ui.widgets.compose.states.StateScreen
 import com.huanchengfly.tieba.post.utils.AccountUtil.LocalAccount
 import com.huanchengfly.tieba.post.utils.HistoryUtil
+import com.huanchengfly.tieba.post.utils.debugTraceForumPage
 import com.huanchengfly.tieba.post.utils.StringUtil.getShortNumString
 import com.huanchengfly.tieba.post.utils.TiebaUtil
 import com.huanchengfly.tieba.post.utils.appPreferences
@@ -467,6 +468,8 @@ fun ForumPage(
     }
 
     val currentListState = if (currentPage == 0) latestListState else goodListState
+
+    debugTraceForumPage(forumName, currentListState, pagerState) // DBG-TRACE:吧页进出/位置快照/pager 切换
 
     val coroutineScope = rememberCoroutineScope()
 
