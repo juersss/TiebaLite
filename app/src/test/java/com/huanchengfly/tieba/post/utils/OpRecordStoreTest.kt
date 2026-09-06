@@ -104,41 +104,38 @@ class OpRecordStoreTest {
 
     @Test
     fun rebaseScopesAlignmentToReloadedObjectsOnly() {
-        // A、B 均已确认赞,随后各自乐观切成踩(在途请求未确认)
+        // A 已确认赞(服务端基准含此操作);B 乐观切踩、请求在途
+        // (外部审查-5:刷新不能确认在途操作,rebase 必须跳过未决对象)
         OpRecordStore.confirm(st, 1, 100, MyAgreeOp.AGREE)
-        OpRecordStore.confirm(st, 1, 101, MyAgreeOp.AGREE)
-        OpRecordStore.setPending(st, 1, 100, MyAgreeOp.DISAGREE)
         OpRecordStore.setPending(st, 1, 101, MyAgreeOp.DISAGREE)
 
-        // 只有 A 所在的页面发生了重载(刷新/翻页)
+        // 只有 A 所在的对象发生了重载(刷新/翻页)
         OpRecordStore.rebase(st, setOf(OpRecordStore.key(1, 100)))
 
-        // A:基准标记对齐到当前意图
-        assertEquals(OpRecord(MyAgreeOp.DISAGREE, MyAgreeOp.DISAGREE), recordOf(1, 100))
+        // A:已确认,对齐保持(rebase 防御性重写 srv=my,不产生漂移)
+        assertEquals(OpRecord(MyAgreeOp.AGREE, MyAgreeOp.AGREE), recordOf(1, 100))
 
-        // B:未被本次重载触及,必须保持"意图=踩,标记=赞"。
-        // 若做全表无差别对齐(旧 rebaseAll 行为),B 的标记也会被对齐成踩,
-        // B 的在途请求随后失败 revertPending 将回退到错误标记 → 计数永久偏移
-        assertEquals(OpRecord(MyAgreeOp.DISAGREE, MyAgreeOp.AGREE), recordOf(1, 101))
+        // B:在途,rebase 不碰基准——旧语义把 srv 对齐到在途意图后,B 请求一旦
+        // 被拒 revertPending 会回退到被污染的标记,回滚失效
+        assertEquals(OpRecord(MyAgreeOp.DISAGREE, MyAgreeOp.NONE), recordOf(1, 101))
 
-        // B 请求失败回退 → 回到真实的对齐标记 AGREE
+        // B 请求失败回退 → 回到 NONE/NONE,不残留乐观偏移
         OpRecordStore.revertPending(st, 1, 101)
-        assertEquals(OpRecord(MyAgreeOp.AGREE, MyAgreeOp.AGREE), recordOf(1, 101))
+        assertEquals(OpRecord(MyAgreeOp.NONE, MyAgreeOp.NONE), recordOf(1, 101))
     }
 
     @Test
-    fun rebaseAlignsMarkerToIntentInsteadOfClearingIt() {
-        // 文档不变量:rebase 是"标记=意图",不是"清除标记"。
+    fun rebaseKeepsConfirmedMarkerAlignedInsteadOfClearingIt() {
+        // 文档不变量:rebase 对已确认对象是"标记=意图",不是"清除标记"。
         // 清成 NONE 会让重载后的显示计数重复叠加 delta。
         OpRecordStore.confirm(st, 1, 100, MyAgreeOp.AGREE)
-        OpRecordStore.setPending(st, 1, 100, MyAgreeOp.DISAGREE)
         OpRecordStore.rebase(st, setOf(OpRecordStore.key(1, 100)))
 
         val rec = recordOf(1, 100)
-        assertEquals(MyAgreeOp.DISAGREE, rec?.my)
-        assertEquals("标记必须对齐到意图,而不是清成 NONE", MyAgreeOp.DISAGREE, rec?.server)
-        // 落盘一致:srv_ 也写成了 DISAGREE
-        assertEquals("DISAGREE", st.map["srv_1_100"])
+        assertEquals(MyAgreeOp.AGREE, rec?.my)
+        assertEquals("标记必须对齐到意图,而不是清成 NONE", MyAgreeOp.AGREE, rec?.server)
+        // 落盘一致:srv_ 保持 AGREE
+        assertEquals("AGREE", st.map["srv_1_100"])
     }
 
     @Test

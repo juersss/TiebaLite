@@ -22,6 +22,19 @@ import kotlinx.coroutines.flow.StateFlow
  * 已包含本地已确认的操作;请求失败时意图回退到对齐标记,显示计数自动回到基准。
  * 注意 rebase 必须是"标记=意图"而不是"清除标记",否则重载后会重复叠加 delta。
  *
+ * **在途识别不变式(外部审查-5)**:`my != server` 当且仅当存在未决的乐观更新。
+ * rebase 只对齐已对齐(my==server,即服务端已确认)的对象;在途对象一律跳过,
+ * 否则刷新会把在途意图写成"服务端基准",随后请求失败时 revertPending 恢复到
+ * 被污染的基准,回滚失效(复现时序:点赞→刷新 rebase→点赞被拒→停在 AGREE/AGREE)。
+ * 进程崩溃遗留的未决记录不会有对应的在途请求,启动加载时按"视为已确认"对齐
+ * (与旧 rebase 语义一致的崩溃恢复口径),显示计数随之自愈。
+ *
+ * **账号隔离(外部审查-4)**:记录按账号 UID 分文件持久化(`agree_op_records_u_<uid>`)。
+ * 旧版单一文件 `agree_op_records` 不区分账号,切换账号后 A 的赞踩会被 B 误判;
+ * 切换账号/退出登录时通过 [onAccountSwitched] 重载内存表。旧文件的存量记录在
+ * 某账号首次落库时一次性迁移给当前活跃账号(旧格式无从区分归属,以迁移时刻的
+ * 活跃账号为归属是力所能及的最优近似),迁移完成后写入墓碑键防止重复迁移。
+ *
  * 记录表是进程级单例([records]),帖子页与楼中楼详情页共享同一份,
  * 任何一页的操作对另一页立即可见。
  *
@@ -31,7 +44,10 @@ import kotlinx.coroutines.flow.StateFlow
  * 单测通过 [resetForTest] 注入内存实现后即可在纯 JVM 上验证状态机与并发。
  * 公开方法只做"Context → 存储后端"的解析再委托给 internal twin,逻辑零重复。
  */
-private const val PREFS_NAME = "agree_op_records"
+private const val LEGACY_PREFS_NAME = "agree_op_records"
+
+/** 按账号分文件的旧文件迁移墓碑键(写入旧文件本身,防止多次迁移) */
+private const val LEGACY_MIGRATED_TOMBSTONE = "migrated_per_account_v1"
 
 object OpRecordStore {
     /**
@@ -58,7 +74,7 @@ object OpRecordStore {
     internal var injectedStorage: OpRecordStorage? = null
 
     private fun storage(context: Context): OpRecordStorage =
-        injectedStorage ?: PrefsBackend(context)
+        injectedStorage ?: PrefsBackend(context, accountPrefsName(AccountUtil.getUid()))
 
     /** 进程启动后首次使用前调用一次 */
     fun init(context: Context) {
@@ -78,12 +94,33 @@ object OpRecordStore {
     }
 
     /**
+     * 账号切换/退出登录后调用:内存表整体重载为当前账号(新 [storage])的持久化记录。
+     * 不重载的话,上一账号的内存记录会串进新账号的界面判定(外部审查-4)。
+     */
+    fun onAccountSwitched(context: Context) {
+        synchronized(lock) {
+            _records.value = runCatching { loadAll(storage(context)) }.getOrDefault(emptyMap())
+        }
+    }
+
+    /**
      * 加载收口线程体。prefs 底层异常(磁盘损坏/prefs 文件竞态删除等)在脱离任何
      * CoroutineScope 的裸线程里会直接崩进程(R5-F1),这里兜底:失败保持
      * "无记录回退回显"降级,本次启动不带历史记录。
      */
     internal fun loadAndMerge(st: OpRecordStorage) {
-        runCatching { applyLoadedRecords(loadAll(st)) }
+        runCatching {
+            val loaded = loadAll(st)
+            // 启动对齐(外部审查-5):进程重启后不存在任何在途请求,持久化里残留的
+            // my!=server 记录是上次崩溃/被杀时未能收尾的乐观更新,按"视为已确认"
+            // 对齐(与旧 rebase 的崩溃恢复口径一致),显示计数随之自愈
+            val stale = mutableMapOf<String, String>()
+            for ((objKey, record) in loaded) {
+                if (record.my != record.server) stale["srv_$objKey"] = record.my.name
+            }
+            if (stale.isNotEmpty()) st.putAll(stale)
+            applyLoadedRecords(if (stale.isEmpty()) loaded else loadAll(st))
+        }
         // 失败即静默降级(保持"无记录回显"行为)——本模块无日志依赖,且降级本身
         // 安全无副作用;不吞掉内存中已有记录,applyLoadedRecords 是纯合并
     }
@@ -190,6 +227,11 @@ object OpRecordStore {
      * [keys] 为本次重载实际涉及的对象([key] 格式,即 "`${objType}_${id}`"),
      * 只对齐这些对象:全表无差别对齐会把基准从未重载的历史对象也对齐掉,
      * 导致在途请求失败后 revertPending 变空操作(计数永久偏移)、以及跨对象污染。
+     *
+     * **在途对象跳过(外部审查-5)**:`my != server` 说明该对象还有未决的乐观更新
+     * (请求尚未返回)。重载不能证明服务端已应用在途意图,把 srv 写成 my 会让
+     * 随后的 revertPending 恢复到被污染的基准,回滚失效——在途对象一律不碰,
+     * 等请求 confirm/revert 收尾后,下一次刷新自然完成对齐。
      */
     fun rebase(context: Context, keys: Set<String>) = rebase(storage(context), keys)
 
@@ -201,9 +243,14 @@ object OpRecordStore {
             val updated = mutableMapOf<String, OpRecord>()
             for (objKey in keys) {
                 val my = st.get("my_$objKey") ?: continue
+                val server = st.get("srv_$objKey")
+                val serverOp = server?.let {
+                    runCatching { MyAgreeOp.valueOf(it) }.getOrDefault(MyAgreeOp.NONE)
+                } ?: MyAgreeOp.NONE
+                val myOp = runCatching { MyAgreeOp.valueOf(my) }.getOrDefault(MyAgreeOp.NONE)
+                if (myOp != serverOp) continue // 在途:不动基准,等请求收尾
                 writes["srv_$objKey"] = my
-                val op = runCatching { MyAgreeOp.valueOf(my) }.getOrDefault(MyAgreeOp.NONE)
-                updated[objKey] = OpRecord(my = op, server = op)
+                updated[objKey] = OpRecord(my = myOp, server = myOp)
             }
             if (writes.isNotEmpty()) st.putAll(writes)
             _records.value = _records.value + updated
@@ -289,9 +336,63 @@ internal interface OpRecordStorage {
     fun putAll(entries: Map<String, String>)
 }
 
-/** 生产实现:直连 SharedPreferences */
-private class PrefsBackend(context: Context) : OpRecordStorage {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+/**
+ * 账号 → prefs 文件名。uid 为空(未登录)时回落旧单文件——未登录不存在赞踩操作,
+ * 该文件在迁移后通常为空,仅作兜底。
+ */
+internal fun accountPrefsName(uid: String?): String {
+    val trimmed = uid?.trim().orEmpty()
+    return if (trimmed.isEmpty()) LEGACY_PREFS_NAME else "${LEGACY_PREFS_NAME}_u_$trimmed"
+}
+
+/**
+ * 旧单文件(不区分账号)的存量记录迁移:全部记入 [current](迁移时刻的活跃账号),
+ * 完成后在旧文件写墓碑键,防止其他账号再次迁移同一批数据。幂等:墓碑已存在或
+ * 旧文件无 my_ 记录时跳过。
+ */
+internal fun migrateLegacyStorageIfNeeded(current: OpRecordStorage, legacy: OpRecordStorage) {
+    if (legacy.get(LEGACY_MIGRATED_TOMBSTONE) != null) return
+    val loaded = OpRecordStore.loadAll(legacy)
+    if (loaded.isEmpty()) {
+        // 无存量也要落墓碑:否则每个新账号首访都重扫一遍旧文件
+        legacy.putAll(mapOf(LEGACY_MIGRATED_TOMBSTONE to "1"))
+        return
+    }
+    val writes = mutableMapOf<String, String>(LEGACY_MIGRATED_TOMBSTONE to "1")
+    for ((objKey, record) in loaded) {
+        writes["my_$objKey"] = record.my.name
+        writes["srv_$objKey"] = record.server.name
+    }
+    current.putAll(writes)
+    legacy.putAll(mapOf(LEGACY_MIGRATED_TOMBSTONE to "1"))
+}
+
+/** 生产实现:直连 SharedPreferences(按账号分文件) */
+private class PrefsBackend(
+    context: Context,
+    prefsName: String,
+) : OpRecordStorage {
+    private val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+
+    companion object {
+        /** 串行化迁移检查,避免并发构造时双重迁移(双写幂等,这里只为省 IO) */
+        private val migrationLock = Any()
+    }
+
+    init {
+        if (prefsName != LEGACY_PREFS_NAME) {
+            synchronized(migrationLock) {
+                runCatching {
+                    if (prefs.all.isEmpty()) {
+                        migrateLegacyStorageIfNeeded(
+                            current = this@PrefsBackend,
+                            legacy = PrefsBackend(context, LEGACY_PREFS_NAME)
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     override fun get(key: String): String? = prefs.getString(key, null)
 
