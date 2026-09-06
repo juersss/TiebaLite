@@ -2,6 +2,9 @@ package com.huanchengfly.tieba.post.arch
 
 import android.util.Log
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.huanchengfly.tieba.post.BuildConfig
@@ -30,7 +33,10 @@ abstract class BaseViewModel<
         > :
     ViewModel() {
 
-    var initialized = false
+    // 首载门闩改为 Compose 状态(自省修正):此前是普通 var,LazyLoad 以它为
+    // LaunchedEffect key 却不具备快照可观察性——仅因赋值恰好发生在 effect 体内
+    // 才未出问题;状态化后 key 语义成立,跨帧变更也能正确触发
+    var initialized by mutableStateOf(false)
 
     // 缓冲 64 + DROP_OLDEST(R9-F1):onEvent 的 listener 可能挂起(snackbar 数秒),
     // 无缓冲的 emit 会反压冻结整条 partial-change 管线(记录写入/dispatchEvent 全部排队);

@@ -410,9 +410,12 @@ fun ForumThreadListPage(
     LaunchedEffect(threadList) {
         if (isGood || threadList.isEmpty()) return@LaunchedEffect
         val anchor = ForumBrowseCache.consumeRestoreAnchor(browseCacheKey) ?: return@LaunchedEffect
-        val listIndex = threadList.indexOfFirst { it.thread.get { id } == anchor.key }
+        // 原子读(自省修正):列表与吧规头部同取一份 uiState 快照。此前分别读两个
+        // collectPartialAsState 状态,跨帧不同步时 +1 偏移会错位到错误条目
+        val state = viewModel.uiState.value
+        val listIndex = state.threadList.indexOfFirst { it.thread.get { id } == anchor.key }
         if (listIndex >= 0) {
-            val lazyIndex = listIndex + if (forumRuleTitle != null) 1 else 0
+            val lazyIndex = listIndex + if (state.forumRuleTitle != null) 1 else 0
             DebugTraceLog.log(traceTag, "RESTORE anchor=${anchor.key} → lazyIndex=$lazyIndex offset=${anchor.offset}")
             lazyListState.scrollToItem(lazyIndex, anchor.offset)
         } else {
