@@ -4,8 +4,8 @@
     <a href="https://github.com/zzc10086/TiebaLite">
         <img alt="Forked from" src="https://img.shields.io/badge/forked%20from-zzc10086%2FTiebaLite-blue">
     </a>
-    <img alt="Version" src="https://img.shields.io/badge/version-4.0.0--personal.24-orange">
-    <img alt="Tests" src="https://img.shields.io/badge/unit%20tests-129%20passing-brightgreen">
+    <img alt="Version" src="https://img.shields.io/badge/version-4.0.0--personal.25-orange">
+    <img alt="Tests" src="https://img.shields.io/badge/unit%20tests-132%20passing-brightgreen">
     <img alt="AI maintained" src="https://img.shields.io/badge/maintenance-AI%20assisted-informational">
 </p>
 
@@ -45,7 +45,7 @@
 ## 测试
 
 ```bash
-./gradlew.bat :app:testDebugUnitTest   # 129 个 JVM 用例，无需设备
+./gradlew.bat :app:testDebugUnitTest   # 132 个 JVM 用例，无需设备
 ./gradlew.bat :app:assembleRelease     # 完整发布构建（R8 + 签名 + lintVital）
 ```
 
