@@ -156,6 +156,11 @@ class SingleAccountSigner(
             .zip(
                 TiebaApi.getInstance().allForumGuideFlow()
             ) { getForumListBean, forumGuideBean ->
+                if (forumGuideBean.truncated) {
+                    // 截断保护(外部审查 v2-R1):全量同步被截断时,签到列表缺尾部——
+                    // 照常签已有部分,但必须留日志避免静默漏签
+                    Log.w(TAG, "全量同步被截断(${forumGuideBean.likeForum.size} 个吧),本次签到列表不完整")
+                }
                 val useMSign = context.appPreferences.oksignUseOfficialOksign
                 val mSignLevel = getForumListBean.level.toInt()
                 val mSignMax = getForumListBean.msignStepNum.toInt()
