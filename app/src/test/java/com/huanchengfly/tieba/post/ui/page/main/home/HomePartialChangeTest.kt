@@ -1,5 +1,6 @@
 package com.huanchengfly.tieba.post.ui.page.main.home
 
+import com.huanchengfly.tieba.post.api.models.ForumGuideBean
 import com.huanchengfly.tieba.post.models.database.History
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -223,5 +224,45 @@ class HomePartialChangeTest {
         val next = HomePartialChange.ToggleHistory(true).reduce(old)
         assertEquals(true, next.expandHistoryForum)
         assertEquals(old.forums.toList(), next.forums.toList()) // 其余不变
+    }
+
+    // ---------- 全量同步截断守卫(ForumGuideSyncOutcome) ----------
+
+    private fun likeForum(name: String, forumId: Long) = ForumGuideBean.LikeForum(
+        forumName = name,
+        forumId = forumId,
+    )
+
+    @Test
+    fun forumGuideBeanTruncatedDefaultsToFalse() {
+        // 锁定非 JSON 字段默认值:Gson 解析正常路径绝不带 truncated,守卫不得误触发
+        assertFalse(ForumGuideBean().truncated)
+    }
+
+    @Test
+    fun truncatedForumGuideYieldsTruncatedOutcome() {
+        val bean = ForumGuideBean(
+            likeForum = listOf(likeForum("吧1", 1L)),
+            truncated = true,
+        )
+        val outcome = bean.toForumGuideSyncOutcome(emptySet())
+        // 截断结果无论带多少数据,都必须判为 Truncated(禁止替换缓存/列表)
+        assertTrue(outcome is ForumGuideSyncOutcome.Truncated)
+        assertEquals(1, (outcome as ForumGuideSyncOutcome.Truncated).fetchedCount)
+    }
+
+    @Test
+    fun completeForumGuideSyncMapsForumsAndFiltersTopForums() {
+        val bean = ForumGuideBean(
+            likeForum = listOf(likeForum("吧1", 1L), likeForum("吧2", 2L)),
+        )
+        val outcome = bean.toForumGuideSyncOutcome(setOf("2"))
+        assertTrue(outcome is ForumGuideSyncOutcome.Complete)
+        outcome as ForumGuideSyncOutcome.Complete
+        assertEquals(2, outcome.forums.size)
+        assertEquals(listOf("1", "2"), outcome.forums.map { it.forumId })
+        // 置顶过滤:只有 topForumIds 命中的吧进入 topForums
+        assertEquals(listOf("2"), outcome.topForums.map { it.forumId })
+        assertEquals(2, outcome.rawForums.size)
     }
 }

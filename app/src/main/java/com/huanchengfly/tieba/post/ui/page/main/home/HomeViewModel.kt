@@ -113,29 +113,30 @@ class HomeViewModel : BaseViewModel<HomeUiIntent, HomePartialChange, HomeUiState
                         emitAll(
                             TiebaApi.getInstance().allForumGuideFlow()
                                 .mapNotNull<ForumGuideBean, HomePartialChange.Refresh> { forumGuideBean ->
-                                    // 截断保护(外部审查 1.2):全量同步达翻页上限/服务端异常中断时,
-                                    // 本次结果不完整——不能用部分数据整体替换缓存与首页列表
-                                    // (isFollowed() 依赖缓存,静默丢吧会让关注状态误判),保留上一次完整数据
-                                    if (forumGuideBean.truncated) {
-                                        Log.w(
-                                            "HomeViewModel",
-                                            "全量同步结果被截断(${forumGuideBean.likeForum.size} 个吧),跳过缓存与列表替换"
-                                        )
-                                        return@mapNotNull null
-                                    }
-                                    val allLikeForums = forumGuideBean.likeForum
-                                    val forums = allLikeForums.map { it.toForum() }
-
-                                    // 全量数据,整体替换缓存
-                                    FollowedForumsCache.updateAll(allLikeForums)
-
-                                    val topForumsDB =
+                                    when (val outcome = forumGuideBean.toForumGuideSyncOutcome(
                                         DatabaseUtil.getTopForums().map { it.forumId }.toSet()
-                                    val topForums = forums.filter { it.forumId in topForumsDB }
-                                    HomePartialChange.Refresh.CacheSynced(
-                                        forums,
-                                        topForums
-                                    ) as HomePartialChange.Refresh
+                                    )) {
+                                        is ForumGuideSyncOutcome.Truncated -> {
+                                            // 截断保护(外部审查 1.2):全量同步达翻页上限/服务端异常
+                                            // 中断时,本次结果不完整——不能用部分数据整体替换缓存与
+                                            // 首页列表(isFollowed() 依赖缓存,静默丢吧会让关注状态误判),
+                                            // 保留上一次完整数据
+                                            Log.w(
+                                                "HomeViewModel",
+                                                "全量同步结果被截断(${outcome.fetchedCount} 个吧),跳过缓存与列表替换"
+                                            )
+                                            null
+                                        }
+
+                                        is ForumGuideSyncOutcome.Complete -> {
+                                            // 全量数据,整体替换缓存
+                                            FollowedForumsCache.updateAll(outcome.rawForums)
+                                            HomePartialChange.Refresh.CacheSynced(
+                                                outcome.forums,
+                                                outcome.topForums
+                                            )
+                                        }
+                                    }
                                 }
                                 .catch { }
                         )
@@ -144,16 +145,6 @@ class HomeViewModel : BaseViewModel<HomeUiIntent, HomePartialChange, HomeUiState
                 .flowOn(Dispatchers.IO)
                 .catch { emit(HomePartialChange.Refresh.Failure(it)) }
                 .onStart { emit(HomePartialChange.Refresh.Start) }
-
-        private fun ForumGuideBean.LikeForum.toForum(): HomeUiState.Forum =
-            HomeUiState.Forum(
-                avatar,
-                forumId.toString(),
-                forumName,
-                isSign == 1,
-                levelId.toString(),
-                hotNum
-            )
 
         @Suppress("USELESS_CAST")
         private fun produceRefreshHistoryPartialChangeFlow(): Flow<HomePartialChange.RefreshHistory> =
@@ -356,3 +347,35 @@ data class HomeUiState(
 }
 
 sealed interface HomeUiEvent : UiEvent
+/** 全量同步结果转化为首页刷新产物的出口(外部审查 v2-R2:抽成纯函数以便 JVM 单测锁定截断守卫) */
+internal sealed interface ForumGuideSyncOutcome {
+    /** 结果被截断:禁止替换缓存与首页列表,保留上一次完整数据 */
+    data class Truncated(val fetchedCount: Int) : ForumGuideSyncOutcome
+
+    data class Complete(
+        val rawForums: List<ForumGuideBean.LikeForum>,
+        val forums: List<HomeUiState.Forum>,
+        val topForums: List<HomeUiState.Forum>,
+    ) : ForumGuideSyncOutcome
+}
+
+internal fun ForumGuideBean.LikeForum.toForum(): HomeUiState.Forum =
+    HomeUiState.Forum(
+        avatar,
+        forumId.toString(),
+        forumName,
+        isSign == 1,
+        levelId.toString(),
+        hotNum
+    )
+
+internal fun ForumGuideBean.toForumGuideSyncOutcome(topForumIds: Set<String>): ForumGuideSyncOutcome =
+    if (truncated) ForumGuideSyncOutcome.Truncated(fetchedCount = likeForum.size)
+    else {
+        val forums = likeForum.map { it.toForum() }
+        ForumGuideSyncOutcome.Complete(
+            rawForums = likeForum,
+            forums = forums,
+            topForums = forums.filter { it.forumId in topForumIds },
+        )
+    }
