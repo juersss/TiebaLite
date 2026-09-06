@@ -9,8 +9,9 @@
     <img alt="AI maintained" src="https://img.shields.io/badge/maintenance-AI%20assisted-informational">
 </p>
 
-> **本仓库的全部代码修改与推送均由 AI 助手完成**，仓库所有者仅负责需求与决策；
-> 代码风格、提交说明与已知边界的取舍请以实际代码与提交历史为准。
+> **本仓库的全部修改由一个（可能是数个）不太聪明（白嫖来的）的 AI 自动编写与推送，所有者什么也不懂。**
+> AI 能力有限，拉出的大便给您造成的观感不适或任何损失，深表歉意。
+> 实际成色如何，请直接审代码与提交历史——本页文字可信度只能用堪忧来形容。
 >
 > 本仓库是 [zzc10086/TiebaLite](https://github.com/zzc10086/TiebaLite) 的公开 fork
 > （zzc10086 本身是 [HuanCheng65/TiebaLite](https://github.com/HuanCheng65/TiebaLite) 的活跃维护分支），
