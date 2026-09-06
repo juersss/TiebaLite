@@ -40,11 +40,26 @@ jobs:
             echo keystore.key.password="${{ secrets.RELEASEKEYPASSWORD }}" >> keystore.properties
           fi
 
+      # fail-closed 配套(外部审查 1.1):secrets 未配置时上方步骤不会生成 keystore.properties,
+      # 而 app/build.gradle.kts 的 release 签名已改为缺配置即抛错——此处先断言给出明确报错,
+      # 避免静默产出 debug 签名的 release 包并发布
+      - name: Assert keystore.properties present (fail-closed)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          test -f keystore.properties || {
+            echo "::error::tag 构建缺少 keystore.properties(RELEASEKEYPASSWORD 等 secrets 未配置)——拒绝静默降级 debug 签名"
+            exit 1
+          }
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
           cache-cleanup: always
           cache-read-only: ${{ github.ref != 'refs/heads/master' && github.ref != 'refs/heads/4.0-dev' }}
+
+      # 外部审查 v2-R4:单测必须进 CI 才有回归保护价值(此前只打包不测试)
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
 
       - name: Build with Gradle
         run: ./gradlew assembleRelease
