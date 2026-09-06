@@ -1,0 +1,30 @@
+# 外部审查-供应链:把一次性 OSV 人工扫描升级为持续盯防。
+# gradle 生态读取根目录版本目录 gradle/libs.versions.toml;github-actions 生态
+# 会跟进固定到完整 commit SHA 的 Action(更新时保留/刷新注释)。
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # 次要/补丁版本合并成一个 PR,减少审阅噪音;大版本单独提 PR 便于评估
+      gradle-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"

@@ -325,7 +325,13 @@ dependencies {
     implementation(libs.com.jaredrummler.colorpicker)
 
     implementation(libs.github.matisse)
-    implementation(libs.xx.permissions)
+    implementation(libs.xx.permissions) {
+        // 外部审查-Jetifier 移除:XXPermissions 26.8 的 POM 遗留声明了
+        // com.android.support:support-fragment:24.2.0,但字节码 139 个类零
+        // android/support 引用(已解包核验)。exclude 后全依赖图不再含任何
+        // support 构件,android.enableJetifier 因此得以关闭(见 gradle.properties)
+        exclude(group = "com.android.support")
+    }
     implementation(libs.com.gyf.immersionbar.immersionbar)
 
     implementation(libs.com.github.yalantis.ucrop)
@@ -345,6 +351,12 @@ dependencies {
 // 且失败信息给出准确原因(signingUnavailableReason)。
 // 验收口径:无凭据 assembleDebug 成功、无凭据 assembleRelease 失败、有效签名
 // assembleRelease 成功。
+// 外部审查-供应链:锁定全部解析配置,锁定文件随库提交,构建按锁定版本解析;
+// 升级依赖时以 ./gradlew :app:dependencies --write-locks 重算(Commit 前跑)
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 val releaseShippingTasks = setOf(
     "assembleRelease",
     "bundleRelease",
