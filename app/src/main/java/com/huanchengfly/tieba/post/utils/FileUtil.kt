@@ -159,6 +159,53 @@ object FileUtil {
         return ""
     }
 
+    /** 上传源文件临时副本目录(cache 私有目录,上传完成后由调用方清理) */
+    private const val UPLOAD_CACHE_DIR = "upload_src"
+
+    /**
+     * 把选中图片解析为可上传的本地文件路径(外部审查-3)。
+     *
+     * 旧链路直接 [getRealPathFromUri] 拿 `_data` 列:云端图片、仅持 URI 读授权、
+     * 无 DATA 列的 provider(空游标/getColumnIndexOrThrow 抛异常)在这条路上全军覆没。
+     * 这里容错化解析并增加兜底:路径解析失败或文件不可读时,用
+     * ContentResolver.openInputStream 把内容复制到私有缓存再返回副本路径。
+     * 解析失败抛 IOException,由调用方的 flow .catch 转成可恢复的 UI 失败态。
+     */
+    @JvmStatic
+    fun resolveUriToUploadPath(context: Context, uri: Uri): String {
+        val realPath = runCatching { getRealPathFromUri(context, uri) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() && File(it).canRead() }
+        if (realPath != null) return realPath
+
+        val cacheDir = File(context.cacheDir, UPLOAD_CACHE_DIR).apply { mkdirs() }
+        val copy = File(cacheDir, "img_${System.currentTimeMillis()}_${(0 until 1000).random()}.jpg")
+        try {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IOException("无法读取所选图片(URI 无内容流)")
+            input.use { source -> copy.outputStream().use { source.copyTo(it) } }
+        } catch (t: Throwable) {
+            copy.delete()
+            throw t
+        }
+        if (copy.length() == 0L) {
+            copy.delete()
+            throw IOException("所选图片内容为空")
+        }
+        return copy.absolutePath
+    }
+
+    /** 上传结束(成功/失败/取消)后清理本次通过缓存副本上传的临时文件 */
+    @JvmStatic
+    fun cleanupUploadCacheFiles(paths: List<String>) {
+        for (path in paths) {
+            val file = File(path)
+            if (file.absolutePath.contains(UPLOAD_CACHE_DIR)) {
+                runCatching { file.delete() }
+            }
+        }
+    }
+
     fun downloadBySystem(context: Context, fileType: Int, url: String?) {
         val fileName = URLUtil.guessFileName(url, null, null)
         downloadBySystem(context, fileType, url, fileName)

@@ -45,6 +45,11 @@ class ImageUploader(
         // 上传解码长边上限:超过则按 2 的幂降采样,防 8K/全景图全尺寸解码 OOM
         const val MAX_UPLOAD_DECODE_DIM = 8192
 
+        // 上传解码总像素上限(外部审查-内存预算):8192 长边约束挡不住两轴均大的
+        // 方形图——8192×8192 的 ARGB_8888 约 256MiB。8M 像素 ≈ 32MiB ARGB_8888,
+        // 超限图会走 1080P 缩放分支,上传可见效果不变
+        const val MAX_UPLOAD_PIXELS = 8L * 1024 * 1024
+
         const val PIC_WATER_TYPE_NO = "0"
         const val PIC_WATER_TYPE_USER_NAME = "1"
         const val PIC_WATER_TYPE_FORUM_NAME = "2"
@@ -111,15 +116,19 @@ class ImageUploader(
     }
 
     /**
-     * 上传路径的位图解码:普通尺寸照片(长边 ≤ [MAX_UPLOAD_DECODE_DIM])行为与原实现
-     * 完全一致;更大的图按 2 的幂降采样到该上限以内,只为挡住 8K/全景图全尺寸解码
-     * (~300MB)造成的 OOM——这类图本来也几乎必然走 1080P 缩放分支,最终输出不变。
+     * 上传路径的位图解码:普通尺寸照片(长边 ≤ [MAX_UPLOAD_DECODE_DIM] 且总像素
+     * ≤ [MAX_UPLOAD_PIXELS])行为与原实现完全一致;超限的图按 2 的幂降采样——
+     * 长边上限挡 8K/全景图全尺寸解码 OOM,总像素上限挡"长边不超限但两轴都大"
+     * 的方形图(8192×8192 ARGB_8888 约 256MiB,外部审查-内存预算)。
+     * 这类图本来也几乎必然走 1080P 缩放分支,最终输出不变。
      */
     private fun decodeForUpload(filePath: String): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(filePath, bounds)
         var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_UPLOAD_DECODE_DIM) {
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_UPLOAD_DECODE_DIM ||
+            bounds.outWidth.toLong() * bounds.outHeight / (sample.toLong() * sample) > MAX_UPLOAD_PIXELS
+        ) {
             sample *= 2
         }
         return if (sample == 1) {
@@ -137,14 +146,16 @@ class ImageUploader(
         filePath: String,
         isOriginImage: Boolean = false,
     ): UploadPictureResultBean {
+        val file = compressImage(filePath, isOriginImage)
+        // 外部审查-元数据一致性:宽高改从最终上传文件读取。压缩可能缩放/降采样,
+        // 旧实现读原图尺寸随分块一起上传,元数据与实际内容不一致
         val option = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
-        BitmapFactory.decodeFile(filePath, option)
+        BitmapFactory.decodeFile(file.absolutePath, option)
         val width = option.outWidth
         val height = option.outHeight
         check(width > 0 && height > 0) { "图片宽高不正确" }
-        val file = compressImage(filePath, isOriginImage)
         // 同步段(校验/MD5/分块读取)失败则临时文件不会被下方 onCompletion 触及,单独清理
         val requestBodies = try {
             val fileLength = file.length()

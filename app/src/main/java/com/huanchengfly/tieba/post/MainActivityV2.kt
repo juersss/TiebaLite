@@ -96,6 +96,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.Sizes
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberDialogState
 import com.huanchengfly.tieba.post.utils.AccountUtil
 import com.huanchengfly.tieba.post.utils.ClientUtils
+import com.huanchengfly.tieba.post.utils.debugTraceNavigation
 import com.huanchengfly.tieba.post.utils.JobServiceUtil
 import com.huanchengfly.tieba.post.utils.PermissionUtils
 import com.huanchengfly.tieba.post.utils.PickMediasRequest
@@ -109,6 +110,7 @@ import com.huanchengfly.tieba.post.utils.newIntentFilter
 import com.huanchengfly.tieba.post.utils.registerPickMediasLauncher
 import com.huanchengfly.tieba.post.utils.requestIgnoreBatteryOptimizations
 import com.huanchengfly.tieba.post.utils.requestPermission
+import com.huanchengfly.tieba.post.utils.shouldUsePhotoPicker
 import com.ramcosta.composedestinations.DestinationsNavHost
 import com.ramcosta.composedestinations.animations.defaults.RootNavGraphDefaultAnimations
 import com.ramcosta.composedestinations.animations.rememberAnimatedNavHostEngine
@@ -168,6 +170,28 @@ class MainActivityV2 : BaseComposeActivity() {
         registerPickMediasLauncher {
             emitGlobalEvent(GlobalEvent.SelectedImages(it.id, it.uris))
         }
+
+    /** 选图统一入口(外部审查-3):系统 Photo Picker 经 URI 授权工作,无需运行时权限;
+     * 回退 Matisse 的链路在此补齐媒体读取权限申请,避免首次安装未授权时空相册/访问失败 */
+    private fun launchPickMedias(request: PickMediasRequest) {
+        if (shouldUsePhotoPicker()) {
+            pickMediasLauncher.launch(request)
+            return
+        }
+        requestPermission {
+            unchecked = true
+            permissions = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                listOf(PermissionUtils.READ_EXTERNAL_STORAGE, PermissionUtils.WRITE_EXTERNAL_STORAGE)
+            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                listOf(PermissionUtils.READ_EXTERNAL_STORAGE)
+            } else {
+                listOf(PermissionUtils.READ_MEDIA_IMAGES)
+            }
+            description = getString(R.string.tip_permission_storage)
+            onGranted = { pickMediasLauncher.launch(request) }
+            onDenied = { toastShort(R.string.toast_no_permission_insert_photo) }
+        }
+    }
 
     private val mLaunchActivityForResultLauncher = registerForActivityResult(
         LaunchActivityForResult()
@@ -468,9 +492,7 @@ class MainActivityV2 : BaseComposeActivity() {
                 okSignAlertDialogState.show()
             }
             onGlobalEvent<GlobalEvent.StartSelectImages> {
-                pickMediasLauncher.launch(
-                    PickMediasRequest(it.id, it.maxCount, it.mediaType)
-                )
+                launchPickMedias(PickMediasRequest(it.id, it.maxCount, it.mediaType))
             }
             onGlobalEvent<GlobalEvent.StartActivityForResult> {
                 mLaunchActivityForResultLauncher.launch(
@@ -487,6 +509,8 @@ class MainActivityV2 : BaseComposeActivity() {
                 val engine = TiebaNavHostDefaults.rememberNavHostEngine()
                 val navigator = TiebaNavHostDefaults.rememberBottomSheetNavigator()
                 val currentDestination by navController.currentDestinationAsState()
+
+                navController.debugTraceNavigation() // DBG-TRACE:页面切换时序
 
                 navController.navigatorProvider += navigator
 

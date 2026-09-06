@@ -27,15 +27,20 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 enum class ReplyPanelType {
@@ -168,16 +173,25 @@ class ReplyViewModel @Inject constructor() :
         }
 
         private fun ReplyUiIntent.UploadImages.producePartialChange() =
-            ImageUploader(forumName)
-                .uploadImages(
-                    imageUris.map {
-                        FileUtil.getRealPathFromUri(
-                            App.INSTANCE,
-                            Uri.parse(it)
-                        )
-                    },
-                    isOriginImage
-                )
+            // 外部审查-3:URI 解析挪进 flow{} 内——旧实现 imageUris.map{getRealPathFromUri}
+            // 在建流前即执行,路径查询抛出的异常落在 .catch 保护范围之外,可能终止状态流;
+            // 解析失败(含缓存副本兜底后仍不可读)在这里被 .catch 转成可恢复的 UI 失败态。
+            // resolveUriToUploadPath 对云端/无 _data 列的图片会复制缓存副本,
+            // finally 里统一清理(cleanup 只删 upload_src 命中的路径,原始路径不受影响)
+            flow {
+                val cacheCopies = mutableListOf<String>()
+                try {
+                    val resolvedPaths = imageUris.map {
+                        FileUtil.resolveUriToUploadPath(App.INSTANCE, Uri.parse(it)).also(cacheCopies::add)
+                    }
+                    emitAll(ImageUploader(forumName).uploadImages(resolvedPaths, isOriginImage))
+                } finally {
+                    // NonCancellable:取消路径下默认抛 CancellationException 会让清理不执行
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        FileUtil.cleanupUploadCacheFiles(cacheCopies)
+                    }
+                }
+            }
                 .map<List<UploadPictureResultBean>, ReplyPartialChange.UploadImages> {
                     ReplyPartialChange.UploadImages.Success(it)
                 }
