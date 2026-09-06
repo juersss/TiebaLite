@@ -292,7 +292,7 @@ internal fun ReplyPageContent(
             .collect {
                 // $it 是用户正在输入的草稿正文,全量 toString 进日志属敏感泄露(R6-F2);
                 // debug 下只打长度,够定位草稿保存问题
-                if (BuildConfig.DEBUG) Log.d("ReplyPage", "draft collect: len=${it.length}")
+                if (BuildConfig.DEBUG) Log.d("ReplyPage", "draft collect: len=${it.length}") // DBG-LOG(遗留调试日志,诊断收尾时可一并移除)
                 if (!replySuccess) {
                     DatabaseUtil.saveDraft(hash, it)
                 }

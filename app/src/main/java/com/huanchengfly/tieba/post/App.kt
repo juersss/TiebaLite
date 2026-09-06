@@ -53,6 +53,7 @@ import com.huanchengfly.tieba.post.utils.ThemeUtil
 import com.huanchengfly.tieba.post.utils.Util
 import com.huanchengfly.tieba.post.utils.appPreferences
 import com.huanchengfly.tieba.post.utils.applicationMetaData
+import com.huanchengfly.tieba.post.utils.debugTraceInstall
 import com.huanchengfly.tieba.post.utils.packageInfo
 import dagger.hilt.android.HiltAndroidApp
 import java.nio.ByteBuffer
@@ -87,6 +88,7 @@ class App : Application(), SketchFactory {
     override fun onCreate() {
         INSTANCE = this
         super.onCreate()
+        debugTraceInstall() // DBG-TRACE:诊断"吧内浏览进度偶尔回退",修复后随 DebugTraceHooks 一并移除
         ClientUtils.init(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             setWebViewPath(this)

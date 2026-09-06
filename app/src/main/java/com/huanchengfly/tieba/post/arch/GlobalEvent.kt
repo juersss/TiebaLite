@@ -93,7 +93,7 @@ inline fun <reified Event : UiEvent> CoroutineScope.onGlobalEvent(
             .cancellable()
             .collect {
                 // 全局事件携带用户相册 URI(SelectedImages)等,全量 toString 只在 debug、只打类名(R6-F2)
-                if (BuildConfig.DEBUG) Log.d("GlobalEvent", "onGlobalEvent: ${it.javaClass.simpleName}")
+                if (BuildConfig.DEBUG) Log.d("GlobalEvent", "onGlobalEvent: ${it.javaClass.simpleName}") // DBG-LOG(遗留调试日志,诊断收尾时可一并移除)
                 listener(it)
             }
     }

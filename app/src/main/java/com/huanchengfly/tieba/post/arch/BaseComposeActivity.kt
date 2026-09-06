@@ -24,6 +24,7 @@ import com.huanchengfly.tieba.post.ui.common.theme.compose.TiebaLiteTheme
 import com.huanchengfly.tieba.post.ui.common.windowsizeclass.WindowSizeClass
 import com.huanchengfly.tieba.post.ui.common.windowsizeclass.calculateWindowSizeClass
 import com.huanchengfly.tieba.post.utils.AccountUtil.LocalAccountProvider
+import com.huanchengfly.tieba.post.utils.DebugTraceLog
 import com.huanchengfly.tieba.post.utils.ThemeUtil
 
 abstract class BaseComposeActivityWithParcelable<DATA : Parcelable> : BaseComposeActivityWithData<DATA>() {
@@ -62,6 +63,12 @@ abstract class BaseComposeActivity : BaseActivity<Nothing>() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 外部定位:浏览进度回退排查——记录 Activity 重建(旋转/进程回收后恢复会让
+        // 组合状态走恢复路径,是进度回退的关键上下文)
+        DebugTraceLog.log(
+            "ACTIVITY",
+            "${javaClass.simpleName} onCreate restoredFromSavedState=${savedInstanceState != null}"
+        )
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
@@ -112,6 +119,21 @@ abstract class BaseComposeActivity : BaseActivity<Nothing>() {
     @Composable
     abstract fun Content()
 
+    override fun onStart() {
+        super.onStart()
+        DebugTraceLog.log("ACTIVITY", "${javaClass.simpleName} onStart")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        DebugTraceLog.log("ACTIVITY", "${javaClass.simpleName} onStop")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        DebugTraceLog.log("ACTIVITY", "${javaClass.simpleName} onDestroy")
+    }
+
     fun handleCommonEvent(event: CommonUiEvent) {
         when (event) {
             is CommonUiEvent.Toast -> {
@@ -145,6 +167,12 @@ sealed interface CommonUiEvent : UiEvent {
     @Composable
     fun BaseViewModel<*, *, *, *>.bindScrollToTopEvent(lazyListState: LazyListState) {
         onEvent<ScrollToTop> {
+            // 外部定位:任何"回到顶部"都必须有明确的触发源记录,否则无法区分
+            // 主动回顶与"进度回退"假象
+            DebugTraceLog.log(
+                "SCROLL_TOP",
+                "${this@bindScrollToTopEvent.javaClass.simpleName} CommonUiEvent.ScrollToTop → scrollToItem(0,0)"
+            )
             lazyListState.scrollToItem(0, 0)
         }
     }

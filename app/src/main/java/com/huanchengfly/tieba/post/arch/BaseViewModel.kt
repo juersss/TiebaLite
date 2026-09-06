@@ -55,12 +55,12 @@ abstract class BaseViewModel<
     val uiState = partialChangeProducer.toPartialChangeFlow(_intentFlow)
         .onEach {
             // 仅在 debug 下输出，且只打类名：状态对象可能携带上千条数据，全量 toString 开销极大
-            if (BuildConfig.DEBUG) Log.d("ViewModel", "partialChange ${it.javaClass.simpleName}")
+            if (BuildConfig.DEBUG) Log.d("ViewModel", "partialChange ${it.javaClass.simpleName}") // DBG-LOG(遗留调试日志,诊断收尾时可一并移除)
             val event = dispatchEvent(it)
             if (event != null) {
                 // 收缩与 partialChange 同口径:事件/意图对象可能携凭据(tbs)或用户正文,
                 // 全量 toString 是 debug 日志卫生问题与开销(R6-F1)
-                if (BuildConfig.DEBUG) Log.d("ViewModel", "event ${event.javaClass.simpleName}")
+                if (BuildConfig.DEBUG) Log.d("ViewModel", "event ${event.javaClass.simpleName}") // DBG-LOG(遗留调试日志,诊断收尾时可一并移除)
                 _internalUiEventFlow.emit(event)
             }
         }
@@ -75,7 +75,7 @@ abstract class BaseViewModel<
 
     fun send(intent: Intent) {
         // 同上:ReplyUiIntent.Send 等意图携带 content/tbs,只打类名(R6-F1)
-        if (BuildConfig.DEBUG) Log.d("ViewModel", "send ${intent.javaClass.simpleName}")
+        if (BuildConfig.DEBUG) Log.d("ViewModel", "send ${intent.javaClass.simpleName}") // DBG-LOG(遗留调试日志,诊断收尾时可一并移除)
         viewModelScope.launch {
             _intentFlow.emit(intent)
         }
