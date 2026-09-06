@@ -2,6 +2,7 @@ package com.huanchengfly.tieba.post.api.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class TopicDetailBean(
@@ -20,8 +21,14 @@ data class TopicDetailDataBean(
     val tbs: String,
     @SerialName("relate_forum")
     val relateForum: List<RelateForumBean>,
-//    @SerialName("special_topic")
-//    val specialTopic: List<SpecialTopicBean>,
+    /**
+     * 置顶/特殊话题内容(外部审查-8)。真实报文形状未经验证(话题详情为
+     * 未完成的预览功能),此前按 List<SpecialTopicBean> 强类型建模会因形状不符导致
+     * 整个话题页解析失败,故被注释。改用 JsonElement 无损捕获:解析永不失败,
+     * 展示层经 TopicDetailPinned 防御性提取,提取失败安全降级为空(与现状一致)。
+     */
+    @SerialName("special_topic")
+    val specialTopic: JsonElement? = null,
     @SerialName("relate_thread")
     val relateThread: RelateThreadBean,
     @SerialName("has_more")

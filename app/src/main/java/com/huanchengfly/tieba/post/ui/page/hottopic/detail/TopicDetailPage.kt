@@ -56,6 +56,7 @@ import com.huanchengfly.tieba.post.arch.CommonUiEvent.ScrollToTop.bindScrollToTo
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
 import com.huanchengfly.tieba.post.arch.pageViewModel
 import com.huanchengfly.tieba.post.arch.wrapImmutable
+import com.huanchengfly.tieba.post.api.models.ThreadBean
 import com.huanchengfly.tieba.post.ui.page.LocalNavigator
 import com.huanchengfly.tieba.post.ui.page.ProvideNavigator
 import com.huanchengfly.tieba.post.ui.common.theme.compose.ExtendedTheme
@@ -130,6 +131,10 @@ fun TopicDetailPage(
     )
     val relateThread by viewModel.uiState.collectPartialAsState(
         prop1 = TopicDetailUiState::relateThread,
+        initial = persistentListOf()
+    )
+    val pinnedThread by viewModel.uiState.collectPartialAsState(
+        prop1 = TopicDetailUiState::pinnedThread,
         initial = persistentListOf()
     )
     val scaffoldState = rememberScaffoldState()
@@ -304,60 +309,92 @@ fun TopicDetailPage(
                                 lazyListState = lazyListState,
                                 loadEnd = loadMoreEnd,
                             ) {
+                                // 置顶帖与主列表共用同一渲染路径,避免两份 FeedCard 配置漂移
+                                val threadCard: @Composable (ThreadBean) -> Unit = { item ->
+                                    FeedCard(
+                                        item = wrapImmutable(item),
+                                        onClick = {
+                                            navigator.navigate(
+                                                ThreadPageDestination(
+                                                    item.threadInfo.threadId,
+                                                    item.threadInfo.forumId
+                                                )
+                                            )
+                                        },
+                                        onClickReply = {
+                                            navigator.navigate(
+                                                ThreadPageDestination(
+                                                    item.threadInfo.threadId,
+                                                    item.threadInfo.forumId,
+                                                    scrollToReply = true
+                                                )
+                                            )
+                                        },
+                                        onAgree = {
+                                            viewModel.send(
+                                                TopicDetailUiIntent.Agree(
+                                                    item.threadInfo.threadId,
+                                                    item.threadInfo.forumId,
+                                                    OpRecordStore.agreeFlag(
+                                                        AgreeParams.OBJ_THREAD,
+                                                        item.threadInfo.threadId,
+                                                        item.threadInfo.userAgree
+                                                    )
+                                                )
+                                            )
+                                        },
+                                        onClickForum = {
+                                            navigator.navigate(
+                                                ForumPageDestination(item.threadInfo.forumName)
+                                            )
+                                        },
+                                        onClickUser = {
+                                            navigator.navigate(
+                                                UserProfilePageDestination(item.threadInfo.userId)
+                                            )
+                                        },
+                                    )
+                                }
                                 MyLazyColumn(
                                     state = lazyListState,
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
+                                    // 置顶/特殊内容独立展示区(外部审查-8):提取失败为空,
+                                    // 不展示,与修复前行为一致
+                                    if (pinnedThread.isNotEmpty()) {
+                                        item(key = "pinned_header") {
+                                            Text(
+                                                text = stringResource(R.string.tip_topic_pinned),
+                                                style = MaterialTheme.typography.caption,
+                                                color = ExtendedTheme.colors.textSecondary,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                            )
+                                        }
+                                        itemsIndexed(
+                                            items = pinnedThread,
+                                            key = { _, item -> "pinned_${item.feedId}" },
+                                        ) { _, item ->
+                                            Container {
+                                                Column {
+                                                    threadCard(item)
+                                                    VerticalDivider(
+                                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                                        thickness = 2.dp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     itemsIndexed(
                                         items = relateThread,
                                         key = { _, item -> "${item.feedId}" },
                                     ) { index, item ->
                                         Container {
                                             Column {
-                                                FeedCard(
-                                                    item = wrapImmutable(item),
-                                                    onClick = {
-                                                        navigator.navigate(
-                                                            ThreadPageDestination(
-                                                                item.threadInfo.threadId,
-                                                                item.threadInfo.forumId
-                                                            )
-                                                        )
-                                                    },
-                                                    onClickReply = {
-                                                        navigator.navigate(
-                                                            ThreadPageDestination(
-                                                                item.threadInfo.threadId,
-                                                                item.threadInfo.forumId,
-                                                                scrollToReply = true
-                                                            )
-                                                        )
-                                                    },
-                                                    onAgree = {
-                                                        viewModel.send(
-                                                            TopicDetailUiIntent.Agree(
-                                                                item.threadInfo.threadId,
-                                                                item.threadInfo.forumId,
-                                                                OpRecordStore.agreeFlag(
-                                                                    AgreeParams.OBJ_THREAD,
-                                                                    item.threadInfo.threadId,
-                                                                    item.threadInfo.userAgree
-                                                                )
-                                                            )
-                                                        )
-                                                    },
-                                                    onClickForum = {
-                                                        navigator.navigate(
-                                                            ForumPageDestination(item.threadInfo.forumName)
-                                                        )
-                                                    },
-                                                    onClickUser = {
-                                                        navigator.navigate(
-                                                            UserProfilePageDestination(item.threadInfo.userId)
-                                                        )
-                                                    },
-                                                )
+                                                threadCard(item)
                                                 if (index < relateThread.size - 1) {
                                                     VerticalDivider(
                                                         modifier = Modifier.padding(horizontal = 16.dp),

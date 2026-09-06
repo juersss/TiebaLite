@@ -162,6 +162,14 @@ class TopicDetailViewModel @Inject constructor() :
                         it.data.topicInfo,
                         it.data.relateForum,
                         it.data.relateThread.threadList,
+                        // 外部审查-8:置顶内容防御性提取(失败降级为空),并与主列表按
+                        // threadId 去重,避免同一帖重复渲染
+                        TopicDetailPinned.extract(it.data.specialTopic)
+                            .filterNot { pinned ->
+                                it.data.relateThread.threadList.any { thread ->
+                                    thread.threadInfo.threadId == pinned.threadInfo.threadId
+                                }
+                            },
                     )
                 }
                 .onStart { emit(TopicDetailPartialChange.Refresh.Start) }
@@ -355,6 +363,7 @@ sealed interface TopicDetailPartialChange : PartialChange<TopicDetailUiState> {
                 topicInfo = topicInfo,
                 relateForum = relateForum.distinctBy { it.forumId }.toImmutableList(),
                 relateThread = relateThread.distinctBy { it.feedId }.toImmutableList(),
+                pinnedThread = pinnedThread.distinctBy { it.threadInfo.threadId }.toImmutableList(),
             )
 
             is Failure -> oldState.copy(isRefreshing = false)
@@ -366,7 +375,9 @@ sealed interface TopicDetailPartialChange : PartialChange<TopicDetailUiState> {
             val hasMore: Boolean,
             val topicInfo: TopicInfoBean,
             val relateForum: List<RelateForumBean>,
-            val relateThread: List<ThreadBean>
+            val relateThread: List<ThreadBean>,
+            // 外部审查-8:置顶/特殊内容(提取失败为空列表,不展示)
+            val pinnedThread: List<ThreadBean> = emptyList(),
         ) : Refresh()
 
         data class Failure(
@@ -383,5 +394,7 @@ data class TopicDetailUiState(
     val currentPage: Int = 1,
     val topicInfo: TopicInfoBean? = null,
     val relateForum: ImmutableList<RelateForumBean> = persistentListOf(),
-    val relateThread: ImmutableList<ThreadBean> = persistentListOf()
+    val relateThread: ImmutableList<ThreadBean> = persistentListOf(),
+    // 外部审查-8:置顶/特殊内容,独立展示区;解析/形状不符时为空
+    val pinnedThread: ImmutableList<ThreadBean> = persistentListOf(),
 ) : UiState
