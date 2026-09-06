@@ -18,7 +18,6 @@ import com.huanchengfly.tieba.post.arch.emitGlobalEvent
 import com.huanchengfly.tieba.post.models.database.Account
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
@@ -94,7 +93,7 @@ object AccountUtil {
     fun newAccount(uid: String, account: Account, callback: (Long) -> Unit) {
         // 兜底(R7-⑤,09-06 收口):裸 GlobalScope 协程体内异常默认直达 CoroutineExceptionHandler
         // 缺失路径崩进程,与 R5-F1/R7-F1 同口径静默降级
-        GlobalScope.launch(Dispatchers.IO) {
+        AppScope.launch(Dispatchers.IO) {
             runCatching {
                 val newId = DatabaseUtil.upsertAccountByUid(account)
                 mutableAllAccountsState.value = DatabaseUtil.getAllAccounts()
@@ -103,6 +102,8 @@ object AccountUtil {
         }
     }
 
+    // 主线程同步 DB 读(已审计取舍,协程治理轮):主键小表查询毫秒级,调用方为
+    // 启动期与用户主动切换/退出的同步 API,转 suspend 需连带改 UI 状态机,不成比例
     private fun getAccountInfo(accountId: Int): Account? {
         // 外部审查-6:缺失的数据库行返回 null,不再构造空 Account()——空账号曾让
         // switchAccount"成功"切到不存在的账号,形成"已登录但凭据为空"的假状态
@@ -110,14 +111,7 @@ object AccountUtil {
     }
 
     @JvmStatic
-    fun getAccountInfoByUid(uid: String): Account? {
-        return runBlocking(Dispatchers.IO) { DatabaseUtil.getAccountByUid(uid) }
-    }
-
-    @JvmStatic
-    fun getAccountInfoByBduss(bduss: String): Account {
-        return runBlocking(Dispatchers.IO) { DatabaseUtil.getAccountByBduss(bduss) } ?: Account()
-    }
+    suspend fun getAccountInfoByUid(uid: String): Account? = DatabaseUtil.getAccountByUid(uid)
 
     @JvmStatic
     fun isLoggedIn(): Boolean {
@@ -132,8 +126,8 @@ object AccountUtil {
         mutableCurrentAccountState.value = account
         // 赞踩记录内存表按账号重载(外部审查-4):不重载则上一账号的记录串进新账号
         OpRecordStore.onAccountSwitched(context)
-        // 兜底(R7-⑤):事件发射的下游异常不应崩在裸 GlobalScope 协程上
-        GlobalScope.launch {
+        // 事件发射走应用级作用域(协程治理);下游异常仍由 runCatching 兜底
+        AppScope.launch {
             runCatching { emitGlobalEvent(GlobalEvent.AccountSwitched) }
         }
         return context.getSharedPreferences("accountData", Context.MODE_PRIVATE).edit()
@@ -221,26 +215,9 @@ object AccountUtil {
             .associate { it.first() to it.drop(1).joinToString("=") }
     }
 
-    @JvmStatic
-    fun updateLoginInfo(cookie: String): Boolean {
-        val cookies = parseCookie(cookie).mapKeys { it.key.uppercase() }
-        val bduss = cookies["BDUSS"]
-        val sToken = cookies["STOKEN"]
-        if (bduss != null && sToken != null) {
-            val account = getAccountInfoByBduss(bduss)
-            runBlocking(Dispatchers.IO) {
-                DatabaseUtil.updateAccount(
-                    account.apply {
-                        this.sToken = sToken
-                        this.cookie = cookie
-                    }
-                )
-            }
-            return true
-        }
-        return false
-    }
 
+    // 主线程同步 DB 写/读(已审计取舍,协程治理轮):用户主动退出路径,小表毫秒级;
+    // 转 suspend 需连带改调用方 UI 状态机,不成比例
     fun exit(context: Context) {
         val account = getLoginInfo() ?: return
         runBlocking(Dispatchers.IO) { DatabaseUtil.deleteAccount(account) }

@@ -9,7 +9,6 @@ import com.huanchengfly.tieba.post.api.models.protos.plainText
 import com.huanchengfly.tieba.post.models.database.Block
 import com.huanchengfly.tieba.post.models.database.Block.Companion.getKeywords
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.regex.Pattern
@@ -36,7 +35,7 @@ object BlockManager {
         block: Block,
         callback: ((Boolean) -> Unit)? = null,
     ) {
-        GlobalScope.launch(Dispatchers.IO) {
+        AppScope.launch(Dispatchers.IO) {
             // 兜底(R7-⑤,09-06 收口):DB 异常崩在裸协程上会带崩进程;
             // 失败时 callback 不触发,UI 不谎报"已加入"
             runCatching {

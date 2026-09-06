@@ -5,7 +5,7 @@ import com.huanchengfly.tieba.post.api.models.AddThreadBean
 import com.huanchengfly.tieba.post.api.models.protos.addPost.AddPostResponse
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.emitGlobalEvent
-import kotlinx.coroutines.GlobalScope
+import com.huanchengfly.tieba.post.utils.AppScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -29,7 +29,7 @@ object AddPostRepository {
                 requireNotNull(isTitle)
             ).onEach {
                 // 兜底(R7-⑤,09-06 收口):裸 GlobalScope 协程体内 checkNotNull/事件发射异常会崩进程
-                GlobalScope.launch {
+                AppScope.launch {
                     runCatching {
                         emitGlobalEvent(
                             GlobalEvent.AddThreadSuccess(
@@ -68,7 +68,7 @@ object AddPostRepository {
             .onEach {
                 // 兜底(R7-⑤,09-06 收口):checkNotNull 对畸形响应(缺 pid)抛
                 // IllegalStateException,裸 GlobalScope 协程会把进程一起带走
-                GlobalScope.launch {
+                AppScope.launch {
                     runCatching {
                         val newPostId = checkNotNull(it.data_?.pid?.toLongOrNull())
                         if (postId != null) {
