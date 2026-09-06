@@ -463,10 +463,13 @@ open class MyWebViewClient(
     /**
      * 判断该 URL 是否属于授信域名（与 interceptWebViewRequest 共用 isInternalHost）。
      * 非授信域名一律返回 false，避免把登录凭据写入任意外部站点。
+     * 外部审查-1:授信判定额外要求 HTTPS——明文 http 页面即使主机名授信也不注入
+     * 凭据(fail-closed:取不到 scheme 一律不可信)。
      */
     private fun isTrustedUrl(url: String): Boolean {
-        val host = runCatching { url.toUri().host }.getOrNull()?.lowercase()
-        return host != null && isInternalHost(host)
+        val uri = runCatching { url.toUri() }.getOrNull() ?: return false
+        val host = uri.host?.lowercase()
+        return uri.scheme?.lowercase() == "https" && host != null && isInternalHost(host)
     }
 
     open fun injectCookies(url: String) {

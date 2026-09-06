@@ -103,8 +103,10 @@ object AccountUtil {
         }
     }
 
-    private fun getAccountInfo(accountId: Int): Account {
-        return runBlocking(Dispatchers.IO) { DatabaseUtil.getAccountById(accountId) } ?: Account()
+    private fun getAccountInfo(accountId: Int): Account? {
+        // 外部审查-6:缺失的数据库行返回 null,不再构造空 Account()——空账号曾让
+        // switchAccount"成功"切到不存在的账号,形成"已登录但凭据为空"的假状态
+        return runBlocking(Dispatchers.IO) { DatabaseUtil.getAccountById(accountId) }
     }
 
     @JvmStatic
@@ -124,8 +126,12 @@ object AccountUtil {
 
     @JvmStatic
     fun switchAccount(context: Context, id: Int): Boolean {
+        // getAccountInfo 对缺失行返回 null(外部审查-6):runCatching 结果为 null
+        // 与失败同路,拒绝切到不存在的账号
         val account = runCatching { getAccountInfo(id) }.getOrNull() ?: return false
         mutableCurrentAccountState.value = account
+        // 赞踩记录内存表按账号重载(外部审查-4):不重载则上一账号的记录串进新账号
+        OpRecordStore.onAccountSwitched(context)
         // 兜底(R7-⑤):事件发射的下游异常不应崩在裸 GlobalScope 协程上
         GlobalScope.launch {
             runCatching { emitGlobalEvent(GlobalEvent.AccountSwitched) }
@@ -236,19 +242,25 @@ object AccountUtil {
     }
 
     fun exit(context: Context) {
-        var accounts = allAccounts
-        var account = getLoginInfo() ?: return
+        val account = getLoginInfo() ?: return
         runBlocking(Dispatchers.IO) { DatabaseUtil.deleteAccount(account) }
         CookieManager.getInstance().removeAllCookies(null)
-        if (accounts.size > 1) {
-            accounts = allAccounts
-            account = accounts[0]
-            switchAccount(context, account.id)
-            Toast.makeText(context, "退出登录成功，已切换至账号 " + account.nameShow, Toast.LENGTH_SHORT).show()
+        // 外部审查-6:删除后从数据库重新查询剩余账号并刷新状态流。旧实现重读
+        // allAccounts——那只是 mutableAllAccountsState 的快照,deleteAccount 不刷新它,
+        // 结果拿到含已删账号的旧列表并切回已删除账号,再经 getAccountInfo 的空
+        // Account() 兜底,形成"已登录但凭据为空"的假状态
+        val remaining = runBlocking(Dispatchers.IO) { DatabaseUtil.getAllAccounts() }
+        mutableAllAccountsState.value = remaining
+        if (remaining.isNotEmpty()) {
+            val next = remaining.first()
+            switchAccount(context, next.id)
+            Toast.makeText(context, "退出登录成功，已切换至账号 " + next.nameShow, Toast.LENGTH_SHORT).show()
             return
         }
         mutableCurrentAccountState.value = null
         context.getSharedPreferences("accountData", Context.MODE_PRIVATE).edit().clear().commit()
+        // 退出最后一个账号:uid 解析为空,内存表重载为空(外部审查-4)
+        OpRecordStore.onAccountSwitched(context)
         Toast.makeText(context, R.string.toast_exit_account_success, Toast.LENGTH_SHORT).show()
     }
 
@@ -281,6 +293,8 @@ object AccountUtil {
     }
 
     fun getBdussCookie(bduss: String): String {
-        return "BDUSS=$bduss; Path=/; Max-Age=315360000; Domain=.baidu.com; Httponly"
+        // Secure 标记(外部审查-1):禁止 WebView 把 BDUSS 随明文 http 请求发出;
+        // 域保持 .baidu.com(百度登录协议要求,无法再收窄)
+        return "BDUSS=$bduss; Path=/; Max-Age=315360000; Domain=.baidu.com; Httponly; Secure"
     }
 }

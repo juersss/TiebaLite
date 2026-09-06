@@ -1,6 +1,7 @@
 package com.huanchengfly.tieba.post.ui.page.login
 
 import android.annotation.SuppressLint
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.compose.animation.core.animateFloatAsState
@@ -222,7 +223,14 @@ fun LoginPage(
                         snackbarHostState
                     )
                 },
-                chromeClient = remember { MyWebChromeClient(context, coroutineScope) }
+                chromeClient = remember { MyWebChromeClient(context, coroutineScope) },
+                onDispose = {
+                    // 外部审查-1.5(与 WebViewPage 同口径):登录页反复进出必须销毁
+                    // WebView 实例,防 native 层资源累积
+                    it.stopLoading()
+                    (it.parent as? ViewGroup)?.removeView(it)
+                    it.destroy()
+                }
             )
 
             if (isLoading) {

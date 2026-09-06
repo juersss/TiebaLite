@@ -13,6 +13,7 @@ import com.huanchengfly.tieba.post.api.retrofit.adapter.FlowCallAdapterFactory
 import com.huanchengfly.tieba.post.api.retrofit.converter.gson.GsonConverterFactory
 import com.huanchengfly.tieba.post.api.retrofit.converter.kotlinx.serialization.asConverterFactory
 import com.huanchengfly.tieba.post.api.retrofit.interceptors.AddWebCookieInterceptor
+import com.huanchengfly.tieba.post.api.retrofit.interceptors.CleartextCredentialGuardInterceptor
 import com.huanchengfly.tieba.post.api.retrofit.interceptors.CommonHeaderInterceptor
 import com.huanchengfly.tieba.post.api.retrofit.interceptors.CommonParamInterceptor
 import com.huanchengfly.tieba.post.api.retrofit.interceptors.ConnectivityInterceptor
@@ -85,7 +86,7 @@ object RetrofitTiebaApi {
 
     val NEW_TIEBA_API: NewTiebaApi by lazy {
         createJsonApi<NewTiebaApi>(
-            "http://c.tieba.baidu.com/",
+            "https://c.tieba.baidu.com/", // 外部审查-1:明文 http 会把 BDUSS/stoken 暴露给链路观察者(实测该域名支持 TLS)
             defaultCommonHeaderInterceptor,
             CommonHeaderInterceptor(
                 Header.USER_AGENT to { "bdtb for Android 8.2.2" },
@@ -158,7 +159,7 @@ object RetrofitTiebaApi {
 
     val MINI_TIEBA_API: MiniTiebaApi by lazy {
         createJsonApi<MiniTiebaApi>(
-            "http://c.tieba.baidu.com/",
+            "https://c.tieba.baidu.com/", // 外部审查-1:明文 http 会把 BDUSS/stoken 暴露给链路观察者(实测该域名支持 TLS)
             defaultCommonHeaderInterceptor,
             CommonHeaderInterceptor(
                 Header.USER_AGENT to { "bdtb for Android 7.2.0.0" },
@@ -179,7 +180,7 @@ object RetrofitTiebaApi {
 
     val OFFICIAL_TIEBA_API: OfficialTiebaApi by lazy {
         createJsonApi<OfficialTiebaApi>(
-            "http://c.tieba.baidu.com/",
+            "https://c.tieba.baidu.com/", // 外部审查-1:明文 http 会把 BDUSS/stoken 暴露给链路观察者(实测该域名支持 TLS)
             CommonHeaderInterceptor(
                 Header.USER_AGENT to { "bdtb for Android 12.41.7.1" },
                 Header.COOKIE to { "CUID=${CuidUtils.getNewCuid()};ka=open;TBBRAND=${Build.MODEL};BAIDUID=${ClientUtils.baiduId};" },
@@ -412,6 +413,8 @@ object RetrofitTiebaApi {
             addInterceptor(FailureResponseInterceptor)
             addInterceptor(ForceLoginInterceptor)
             addInterceptor(sortAndSignInterceptor)
+            // 明文凭据守卫放链尾:参数/头注入完成后的最终请求形态才可判定(外部审查-1)
+            addInterceptor(CleartextCredentialGuardInterceptor())
             addInterceptor(ConnectivityInterceptor)
             connectionPool(connectionPool)
         }.build())
@@ -439,6 +442,7 @@ object RetrofitTiebaApi {
             addInterceptor(ForceLoginInterceptor)
             addInterceptor(CookieInterceptor)
             addInterceptor(sortAndSignInterceptor)
+            addInterceptor(CleartextCredentialGuardInterceptor())
             addInterceptor(ConnectivityInterceptor)
             connectionPool(connectionPool)
         }.build())
