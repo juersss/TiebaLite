@@ -237,12 +237,14 @@ class SingleAccountSigner(
                                 .catch { e ->
                                 result = false
                                 lastFailure = e
-                                mProgressListener?.onFailure(
-                                    position,
-                                    totalCount,
-                                    e.getErrorCode(),
-                                    e.getErrorMessage()
-                                )
+                                withContext(Dispatchers.Main) {
+                                    mProgressListener?.onFailure(
+                                        position,
+                                        totalCount,
+                                        e.getErrorCode(),
+                                        e.getErrorMessage()
+                                    )
+                                }
                                 delay(getSignDelay())
                             }
                         } else classifySignFlow(it)
@@ -251,12 +253,14 @@ class SingleAccountSigner(
             .catch { e ->
                 result = false
                 lastFailure = e
-                mProgressListener?.onFailure(
-                    position,
-                    totalCount,
-                    e.getErrorCode(),
-                    e.getErrorMessage()
-                )
+                withContext(Dispatchers.Main) {
+                    mProgressListener?.onFailure(
+                        position,
+                        totalCount,
+                        e.getErrorCode(),
+                        e.getErrorMessage()
+                    )
+                }
                 delay(getSignDelay())
             }
             .onCompletion {

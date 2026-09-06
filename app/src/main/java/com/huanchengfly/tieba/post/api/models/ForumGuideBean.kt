@@ -15,7 +15,10 @@ data class ForumGuideBean(
     @SerializedName("error_code") var errorCode: Int = 0,
     @SerializedName("error_msg") var errorMsg: String = "",
     @SerializedName("like_forum") var likeForum: List<LikeForum> = emptyList(),
-    @SerializedName("like_priv_sets") var likePrivSets: Int = 0
+    @SerializedName("like_priv_sets") var likePrivSets: Int = 0,
+    // 非 JSON 字段:全量同步达到翻页上限/服务端异常中断时由 allForumGuideFlow 置 true,
+    // 下游据此跳过"整体替换缓存/首页列表"(外部审查 1.2:截断数据覆盖完整缓存会静默丢吧)
+    var truncated: Boolean = false
 ) : BaseBean() {
     data class LikeForum(
         @SerializedName("forum_name") var forumName: String = "",

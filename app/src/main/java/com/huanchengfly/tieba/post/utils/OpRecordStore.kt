@@ -107,6 +107,11 @@ object OpRecordStore {
      * 列表页旧代码直接读服务端回显 `agree.hasAgree`——该字段已知不可靠(踩过也可能回 1),
      * 会把"刚在帖子页踩过的楼"判成"已赞",再点赞就发成"取消赞"请求,还会被权威响应
      * 覆盖掉踩记录。有本地记录时一律以记录为准,无记录才回退服务端回显(旧行为)。
+     *
+     * 与 [currentMy] 的分工(两函数注释口径统一):本函数读内存 records,异步加载窗口内
+     * 与卡片显示**同源**回退服务端回显——误判只影响展示与回显旗标,由权威码自愈,是
+     * 复核确认的既定取舍;而 currentMy 服务于**意图判定**(配对撤销/撤销旗标),误判会
+     * 造成服务端孤儿操作,故必须直读 prefs 真值。两者差异按用途刻意设计,不是遗漏。
      */
     fun agreeFlag(objType: Int, id: Long, serverEchoHasAgree: Int): Int {
         val record = records.value[key(objType, id)] ?: return serverEchoHasAgree

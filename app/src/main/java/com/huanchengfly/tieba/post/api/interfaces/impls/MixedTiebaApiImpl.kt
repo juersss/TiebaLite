@@ -1818,12 +1818,19 @@ object MixedTiebaApiImpl : ITiebaApi {
             currentPage++
         }
         if (hasMore) {
-            Log.w(TAG, "allForumGuideFlow: 已达最大翻页上限 $MAX_FORUM_GUIDE_PAGES,提前结束全量同步")
+            Log.w(
+                TAG,
+                "allForumGuideFlow: 全量同步未完整拉取(达最大翻页上限 $MAX_FORUM_GUIDE_PAGES" +
+                    "或服务端异常中断),结果已标记 truncated,下游禁止整体替换缓存"
+            )
         }
 
         finalBean?.apply {
             // toList() 快照,避免下游持有可变列表引用
             this.likeForum = allLikeForums.toList()
+            // 截断标记(外部审查 1.2):hasMore 为 true 意味着因页数上限或服务端异常中断,
+            // 结果不完整——下游禁止用它整体替换缓存/首页列表,防止静默丢吧
+            this.truncated = hasMore
         }?.let {
             emit(it)
         }

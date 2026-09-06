@@ -2,6 +2,7 @@ package com.huanchengfly.tieba.post.ui.page.main.home
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
+import android.util.Log
 import com.huanchengfly.tieba.post.api.TiebaApi
 import com.huanchengfly.tieba.post.api.models.CommonResponse
 import com.huanchengfly.tieba.post.api.models.ForumGuideBean
@@ -25,6 +26,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
@@ -110,7 +112,17 @@ class HomeViewModel : BaseViewModel<HomeUiIntent, HomePartialChange, HomeUiState
                         emit(success)
                         emitAll(
                             TiebaApi.getInstance().allForumGuideFlow()
-                                .map<ForumGuideBean, HomePartialChange.Refresh> { forumGuideBean ->
+                                .mapNotNull<ForumGuideBean, HomePartialChange.Refresh> { forumGuideBean ->
+                                    // 截断保护(外部审查 1.2):全量同步达翻页上限/服务端异常中断时,
+                                    // 本次结果不完整——不能用部分数据整体替换缓存与首页列表
+                                    // (isFollowed() 依赖缓存,静默丢吧会让关注状态误判),保留上一次完整数据
+                                    if (forumGuideBean.truncated) {
+                                        Log.w(
+                                            "HomeViewModel",
+                                            "全量同步结果被截断(${forumGuideBean.likeForum.size} 个吧),跳过缓存与列表替换"
+                                        )
+                                        return@mapNotNull null
+                                    }
                                     val allLikeForums = forumGuideBean.likeForum
                                     val forums = allLikeForums.map { it.toForum() }
 
@@ -163,13 +175,19 @@ class HomeViewModel : BaseViewModel<HomeUiIntent, HomePartialChange, HomeUiState
             }.flowOn(Dispatchers.IO)
                 .catch { emit(HomePartialChange.TopForums.Add.Failure(it.getErrorMessage())) }
 
-        private fun HomeUiIntent.Unfollow.toPartialChangeFlow() =
-            TiebaApi.getInstance()
-                .unlikeForumFlow(forumId, forumName, AccountUtil.getLoginInfo()!!.tbs)
+        private fun HomeUiIntent.Unfollow.toPartialChangeFlow(): Flow<HomePartialChange.Unfollow> {
+            // 未登录守卫(外部审查 1.4):getLoginInfo() 登出态返回 null,`!!` 把 NPE 抛在
+            // 流构建期,内部的 .catch 兜不住(异常发生在流存在之前);上游 #113"登录后掉线"
+            // 使该状态并不罕见——转为 Failure 走正常失败分支
+            val tbs = AccountUtil.getLoginInfo()?.tbs
+                ?: return flowOf(HomePartialChange.Unfollow.Failure("未登录"))
+            return TiebaApi.getInstance()
+                .unlikeForumFlow(forumId, forumName, tbs)
                 .map<CommonResponse, HomePartialChange.Unfollow> {
                     HomePartialChange.Unfollow.Success(forumId)
                 }
                 .catch { emit(HomePartialChange.Unfollow.Failure(it.getErrorMessage())) }
+        }
 
         private fun HomeUiIntent.ToggleHistory.toPartialChangeFlow() =
             flowOf(HomePartialChange.ToggleHistory(!currentExpand))

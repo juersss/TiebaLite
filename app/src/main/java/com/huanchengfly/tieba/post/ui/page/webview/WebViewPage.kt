@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.location.LocationManager
 import android.net.Uri
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.JsResult
@@ -255,7 +256,14 @@ fun WebViewPage(
                     }
                 },
                 client = remember(navigator) { MyWebViewClient(navigator) },
-                chromeClient = remember { MyWebChromeClient(context, coroutineScope) }
+                chromeClient = remember { MyWebChromeClient(context, coroutineScope) },
+                onDispose = {
+                    // 外部审查 1.5:离开页面必须销毁 WebView 实例——高频入口(外链/登录/吧规页)
+                    // 反复进出时,不销毁会持续累积 native 层资源
+                    it.stopLoading()
+                    (it.parent as? ViewGroup)?.removeView(it)
+                    it.destroy()
+                }
             )
 
             if (isLoading) {

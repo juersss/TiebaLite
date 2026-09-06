@@ -123,6 +123,9 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             multiDexEnabled = true
+            // debug 允许回落:纯克隆(无 keystore.properties)也能出本地调试包
+            signingConfig = signingConfigs.findByName("config")
+                ?: signingConfigs.getByName("debug")
         }
         release {
             isMinifyEnabled = true
@@ -134,12 +137,17 @@ android {
             isDebuggable = false
             isJniDebuggable = false
             multiDexEnabled = true
-        }
-        all {
-            signingConfig =
-                if (signingConfigs.any { it.name == "config" })
-                    signingConfigs.getByName("config")
-                else signingConfigs.getByName("debug")
+            // fail-closed(外部审查 1.1,release 限定):keystore.properties 整体缺失时
+            // config 签名根本不会创建——此前静默回落 debug 签名,与"拒绝静默降级"的设计
+            // 意图相悖(装过正式包的设备将无法再覆盖升级)。release 缺签名配置直接失败;
+            // debug 不可随之抛错,否则纯克隆环境连本地调试包都出不来
+            signingConfig = signingConfigs.findByName("config")
+                ?: throw GradleException(
+                    "release 构建缺少签名配置:keystore.properties 缺失或签名口令未配置。" +
+                        "请配置 keystore.properties(keystore.file/alias)与口令" +
+                        "(环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD 或" +
+                        " ~/.tieba-personal.properties),拒绝静默降级 debug 签名。"
+                )
         }
     }
     compileOptions {
