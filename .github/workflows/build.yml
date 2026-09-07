@@ -68,7 +68,7 @@ jobs:
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
           cache-cleanup: always
-          cache-read-only: ${{ github.ref != 'refs/heads/master' && github.ref != 'refs/heads/4.0-dev' }}
+          cache-read-only: ${{ github.ref != 'refs/heads/4.0-dev' }} # 原判断引用了仓库不存在的 master 分支
 
       # 外部审查 v2-R4:单测必须进 CI 才有回归保护价值(此前只打包不测试)
       - name: Run unit tests

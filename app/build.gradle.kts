@@ -182,6 +182,10 @@ android {
     // lint 只报基线之外的新错误,存量债逐项清偿后由 updateLintBaseline 收缩基线
     lint {
         baseline = file("lint-baseline.xml")
+        // lintVital 只分析 fatal 子集,与全量 lint 的共享基线必然错位
+        // (每次 release 刷 780 条"baseline not found"噪音)。lint 把关统一由
+        // 全量 lintDebug 承担(CI 的 Unit Tests & Lint 工作流每次 push/PR 都跑)
+        checkReleaseBuilds = false
     }
     packaging {
         resources {
