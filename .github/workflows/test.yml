@@ -1,8 +1,8 @@
-name: Unit Tests
+name: Unit Tests & Lint
 
 # 外部审查-7:此前唯一工作流 build.yml 仅由手动操作或 v* tag 触发,日常改动
-# 不会自动跑单测,"132 passing" 徽章没有云端运行记录支撑。本工作流为
-# 无需发布凭据的日常校验(push/PR),tag 发布仍走 build.yml。
+# 不会自动跑单测。本工作流为无需发布凭据的日常校验(push/PR),运行 JVM 单测 +
+# Android Lint(新增 Error 阻断,存量问题见 app/lint-baseline.xml),tag 发布仍走 build.yml。
 on:
   workflow_dispatch:
   push:
@@ -43,10 +43,19 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
 
+      # 外部审查-静态分析(第⑥项第一步):Android Lint 对基线之外的新增 Error
+      # 阻断日常校验;存量 71 Error 挂账于 app/lint-baseline.xml,清偿后可
+      # ./gradlew :app:updateLintBaseline 收缩基线
+      - name: Run Android Lint
+        run: ./gradlew lintDebug
+
       - name: Upload test reports (on failure)
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-reports-${{ github.run_number }}
-          path: app/build/reports/tests/testDebugUnitTest
+          path: |
+            app/build/reports/tests/testDebugUnitTest
+            app/build/reports/lint-results-debug.*
           if-no-files-found: ignore
+          retention-days: 14

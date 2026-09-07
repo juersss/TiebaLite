@@ -177,6 +177,12 @@ android {
 
         stabilityConfigurationFile.set(rootProject.layout.projectDirectory.file("compose_stability_configuration.txt").asFile)
     }
+    // 外部审查-静态分析:CI 跑 lintDebug 并对新增 Error 阻断。存量问题
+    // (71 Error:LocalContext 取资源/AppLink scheme/反射等)基线化挂账——
+    // lint 只报基线之外的新错误,存量债逐项清偿后由 updateLintBaseline 收缩基线
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
