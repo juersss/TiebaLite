@@ -289,18 +289,16 @@ fun ForumSearchPostPage(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    val sortTypeMapping = remember {
-        mapOf(
-            ForumSearchPostSortType.NEWEST to context.getString(R.string.title_search_post_sort_by_time),
-            ForumSearchPostSortType.RELATIVE to context.getString(R.string.title_search_post_sort_by_relevant),
-        )
-    }
-    val filterTypeMapping = remember {
-        mapOf(
-            ForumSearchPostFilterType.ALL to context.getString(R.string.title_search_filter_all),
-            ForumSearchPostFilterType.ONLY_THREAD to context.getString(R.string.title_search_filter_only_thread),
-        )
-    }
+    // 组合内 stringResource 直接建表(替代 remember+context.getString):
+    // 跟随语言切换重组,map 仅两键,重建成本可忽略
+    val sortTypeMapping = mapOf(
+        ForumSearchPostSortType.NEWEST to stringResource(R.string.title_search_post_sort_by_time),
+        ForumSearchPostSortType.RELATIVE to stringResource(R.string.title_search_post_sort_by_relevant),
+    )
+    val filterTypeMapping = mapOf(
+        ForumSearchPostFilterType.ALL to stringResource(R.string.title_search_filter_all),
+        ForumSearchPostFilterType.ONLY_THREAD to stringResource(R.string.title_search_filter_only_thread),
+    )
     var expanded by remember { mutableStateOf(false) }
 
     MyScaffold(

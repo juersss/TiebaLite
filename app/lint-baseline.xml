@@ -427,41 +427,8 @@
         errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/arch/BaseComposeActivity.kt"
-            line="168"
+            line="146"
             column="35"/>
-    </issue>
-
-    <issue
-        id="ComposableNaming"
-        message="Composable functions that return Unit should start with an uppercase letter"
-        errorLine1="fun NavHostController.debugTraceNavigation() {"
-        errorLine2="                      ~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/utils/DebugTraceHooks.kt"
-            line="49"
-            column="23"/>
-    </issue>
-
-    <issue
-        id="ComposableNaming"
-        message="Composable functions that return Unit should start with an uppercase letter"
-        errorLine1="fun debugTraceForumPage(forumName: String, listState: LazyListState, pagerState: PagerState) {"
-        errorLine2="    ~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/utils/DebugTraceHooks.kt"
-            line="66"
-            column="5"/>
-    </issue>
-
-    <issue
-        id="ComposableNaming"
-        message="Composable functions that return Unit should start with an uppercase letter"
-        errorLine1="fun debugTraceForumList("
-        errorLine2="    ~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/utils/DebugTraceHooks.kt"
-            line="99"
-            column="5"/>
     </issue>
 
     <issue
@@ -493,7 +460,7 @@
         errorLine2="                                     ~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/arch/GlobalEvent.kt"
-            line="103"
+            line="99"
             column="38"/>
     </issue>
 
@@ -544,17 +511,6 @@
     <issue
         id="LocalContextGetResourceValueCall"
         message="Querying resource values using LocalContext.current"
-        errorLine1="                            drawable = LocalContext.current.getDrawable("
-        errorLine2="                                       ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/about/AboutPage.kt"
-            line="80"
-            column="40"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
         errorLine1="                    is BlockListUiEvent.Success.Add -> context.getString(R.string.toast_add_success)"
         errorLine2="                                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -577,44 +533,11 @@
     <issue
         id="LocalContextGetResourceValueCall"
         message="Querying resource values using LocalContext.current"
-        errorLine1="                                    drawable = LocalContext.current.getDrawable("
-        errorLine2="                                               ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/custom/CustomSettingsPage.kt"
-            line="153"
-            column="48"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                                    drawable = LocalContext.current.getDrawable("
-        errorLine2="                                               ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/custom/CustomSettingsPage.kt"
-            line="164"
-            column="48"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                                    drawable = LocalContext.current.getDrawable("
-        errorLine2="                                               ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/custom/CustomSettingsPage.kt"
-            line="175"
-            column="48"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
         errorLine1="            message = context.getString("
         errorLine2="                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="389"
+            line="388"
             column="23"/>
     </issue>
 
@@ -625,7 +548,7 @@
         errorLine2="                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="398"
+            line="397"
             column="23"/>
     </issue>
 
@@ -636,7 +559,7 @@
         errorLine2="                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="406"
+            line="405"
             column="23"/>
     </issue>
 
@@ -647,7 +570,7 @@
         errorLine2="                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="414"
+            line="413"
             column="23"/>
     </issue>
 
@@ -658,7 +581,7 @@
         errorLine2="                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="422"
+            line="421"
             column="23"/>
     </issue>
 
@@ -669,7 +592,7 @@
         errorLine2="                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="429"
+            line="428"
             column="23"/>
     </issue>
 
@@ -680,7 +603,7 @@
         errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="514"
+            line="512"
             column="29"/>
     </issue>
 
@@ -691,7 +614,7 @@
         errorLine2="                                                                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="630"
+            line="628"
             column="71"/>
     </issue>
 
@@ -702,52 +625,8 @@
         errorLine2="                                                                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="639"
+            line="637"
             column="71"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            ForumSearchPostSortType.NEWEST to context.getString(R.string.title_search_post_sort_by_time),"
-        errorLine2="                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/searchpost/ForumSearchPostPage.kt"
-            line="294"
-            column="47"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            ForumSearchPostSortType.RELATIVE to context.getString(R.string.title_search_post_sort_by_relevant),"
-        errorLine2="                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/searchpost/ForumSearchPostPage.kt"
-            line="295"
-            column="49"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            ForumSearchPostFilterType.ALL to context.getString(R.string.title_search_filter_all),"
-        errorLine2="                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/searchpost/ForumSearchPostPage.kt"
-            line="300"
-            column="46"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            ForumSearchPostFilterType.ONLY_THREAD to context.getString(R.string.title_search_filter_only_thread),"
-        errorLine2="                                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/searchpost/ForumSearchPostPage.kt"
-            line="301"
-            column="54"/>
     </issue>
 
     <issue
@@ -757,7 +636,7 @@
         errorLine2="                      ^">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/threadlist/ForumThreadListPage.kt"
-            line="336"
+            line="324"
             column="23"/>
     </issue>
 
@@ -768,7 +647,7 @@
         errorLine2="                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/threadlist/ForumThreadListPage.kt"
-            line="341"
+            line="329"
             column="27"/>
     </issue>
 
@@ -792,39 +671,6 @@
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/generaltablist/GeneralTabListPage.kt"
             line="142"
             column="31"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                            context.getString(R.string.summary_photo_picker_not_supported)"
-        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/habit/HabitSettingsPage.kt"
-            line="373"
-            column="29"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                            context.getString(R.string.summary_do_not_use_photo_picker)"
-        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/habit/HabitSettingsPage.kt"
-            line="375"
-            column="29"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                            context.getString(R.string.summary_use_photo_picker)"
-        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/habit/HabitSettingsPage.kt"
-            line="377"
-            column="29"/>
     </issue>
 
     <issue
@@ -891,149 +737,6 @@
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/oksign/OKSignSettingsPage.kt"
             line="193"
             column="68"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="        ReplyType.TOPIC_THREAD -> context.getString(R.string.title_thread)"
-        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="304"
-            column="35"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="        else -> context.getString(R.string.title_reply)"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="305"
-            column="17"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            ReplyType.TOPIC_THREAD -> context.getString(R.string.title_thread)"
-        errorLine2="                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="309"
-            column="39"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            else -> context.getString(R.string.title_reply)"
-        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="310"
-            column="21"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            replyType == ReplyType.TOPIC_THREAD -> context.getString(R.string.tip_thread_content)"
-        errorLine2="                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="315"
-            column="52"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            replyType == ReplyType.TOPIC_THREAD -> context.getString(R.string.tip_thread_content)"
-        errorLine2="                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="315"
-            column="52"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                context.getString(R.string.hint_reply, replyUserName)"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="317"
-            column="17"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                context.getString(R.string.hint_reply, replyUserName)"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="317"
-            column="17"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            else -> context.getString(R.string.tip_reply)"
-        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="318"
-            column="21"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="            else -> context.getString(R.string.tip_reply)"
-        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="318"
-            column="21"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                        context.getString(R.string.title_search_order_new) to SearchThreadSortType.SORT_TYPE_NEWEST,"
-        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/search/SearchPage.kt"
-            line="216"
-            column="25"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                        context.getString(R.string.title_search_order_old) to SearchThreadSortType.SORT_TYPE_OLDEST,"
-        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/search/SearchPage.kt"
-            line="217"
-            column="25"/>
-    </issue>
-
-    <issue
-        id="LocalContextGetResourceValueCall"
-        message="Querying resource values using LocalContext.current"
-        errorLine1="                        context.getString(R.string.title_search_order_relevant) to SearchThreadSortType.SORT_TYPE_RELATIVE,"
-        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/search/SearchPage.kt"
-            line="218"
-            column="25"/>
     </issue>
 
     <issue
@@ -3496,7 +3199,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="41"
+            line="40"
             column="8"/>
     </issue>
 
@@ -3507,7 +3210,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="42"
+            line="41"
             column="8"/>
     </issue>
 
@@ -3518,7 +3221,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="43"
+            line="42"
             column="8"/>
     </issue>
 
@@ -3529,7 +3232,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="44"
+            line="43"
             column="8"/>
     </issue>
 
@@ -3540,7 +3243,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="45"
+            line="44"
             column="8"/>
     </issue>
 
@@ -3551,7 +3254,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="46"
+            line="45"
             column="8"/>
     </issue>
 
@@ -3562,7 +3265,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="47"
+            line="46"
             column="8"/>
     </issue>
 
@@ -3573,7 +3276,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="48"
+            line="47"
             column="8"/>
     </issue>
 
@@ -3584,7 +3287,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="49"
+            line="48"
             column="8"/>
     </issue>
 
@@ -3595,7 +3298,7 @@
         errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="50"
+            line="49"
             column="8"/>
     </issue>
 
@@ -5296,50 +4999,6 @@
     <issue
         id="UseCompatLoadingForDrawables"
         message="Use `AppCompatResources.getDrawable()`"
-        errorLine1="                            drawable = LocalContext.current.getDrawable("
-        errorLine2="                                       ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/about/AboutPage.kt"
-            line="80"
-            column="40"/>
-    </issue>
-
-    <issue
-        id="UseCompatLoadingForDrawables"
-        message="Use `AppCompatResources.getDrawable()`"
-        errorLine1="                                    drawable = LocalContext.current.getDrawable("
-        errorLine2="                                               ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/custom/CustomSettingsPage.kt"
-            line="153"
-            column="48"/>
-    </issue>
-
-    <issue
-        id="UseCompatLoadingForDrawables"
-        message="Use `AppCompatResources.getDrawable()`"
-        errorLine1="                                    drawable = LocalContext.current.getDrawable("
-        errorLine2="                                               ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/custom/CustomSettingsPage.kt"
-            line="164"
-            column="48"/>
-    </issue>
-
-    <issue
-        id="UseCompatLoadingForDrawables"
-        message="Use `AppCompatResources.getDrawable()`"
-        errorLine1="                                    drawable = LocalContext.current.getDrawable("
-        errorLine2="                                               ^">
-        <location
-            file="src/main/java/com/huanchengfly/tieba/post/ui/page/settings/custom/CustomSettingsPage.kt"
-            line="175"
-            column="48"/>
-    </issue>
-
-    <issue
-        id="UseCompatLoadingForDrawables"
-        message="Use `AppCompatResources.getDrawable()`"
         errorLine1="                        ThemeUtils.tintDrawable(context.getDrawable(R.drawable.bg_popup),"
         errorLine2="                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -5476,7 +5135,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/App.kt"
-            line="70"
+            line="69"
             column="13"/>
     </issue>
 
@@ -8011,7 +7670,7 @@
         errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/App.kt"
-            line="285"
+            line="283"
             column="29"/>
     </issue>
 
@@ -8022,7 +7681,7 @@
         errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/App.kt"
-            line="290"
+            line="288"
             column="29"/>
     </issue>
 
@@ -8066,7 +7725,7 @@
         errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/forum/ForumPage.kt"
-            line="361"
+            line="360"
             column="44"/>
     </issue>
 
@@ -8110,7 +7769,7 @@
         errorLine2="                                     ~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/MainActivityV2.kt"
-            line="359"
+            line="358"
             column="38"/>
     </issue>
 
@@ -8121,7 +7780,7 @@
         errorLine2="                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/MainActivityV2.kt"
-            line="379"
+            line="378"
             column="43"/>
     </issue>
 
@@ -8132,7 +7791,7 @@
         errorLine2="                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/MainActivityV2.kt"
-            line="383"
+            line="382"
             column="43"/>
     </issue>
 
@@ -8187,7 +7846,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="770"
+            line="762"
             column="13"/>
     </issue>
 
@@ -8198,7 +7857,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/huanchengfly/tieba/post/ui/page/reply/ReplyPage.kt"
-            line="772"
+            line="764"
             column="13"/>
     </issue>
 

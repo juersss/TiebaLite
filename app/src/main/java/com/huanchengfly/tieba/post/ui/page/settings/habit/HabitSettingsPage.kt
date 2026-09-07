@@ -370,11 +370,11 @@ fun HabitSettingsPage(
                     title = stringResource(id = R.string.title_do_not_use_photo_picker),
                     summary = {
                         if (!isPhotoPickerAvailable()) {
-                            context.getString(R.string.summary_photo_picker_not_supported)
+                            stringResource(R.string.summary_photo_picker_not_supported)
                         } else if (it) {
-                            context.getString(R.string.summary_do_not_use_photo_picker)
+                            stringResource(R.string.summary_do_not_use_photo_picker)
                         } else {
-                            context.getString(R.string.summary_use_photo_picker)
+                            stringResource(R.string.summary_use_photo_picker)
                         }
                     },
                     defaultChecked = false,

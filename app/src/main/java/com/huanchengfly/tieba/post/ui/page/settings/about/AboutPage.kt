@@ -24,12 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.huanchengfly.tieba.post.BuildConfig
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.toastShort
@@ -76,11 +76,7 @@ fun AboutPage(
             ) {
                 Column(modifier = Modifier.align(Alignment.Center)) {
                     Image(
-                        painter = rememberDrawablePainter(
-                            drawable = LocalContext.current.getDrawable(
-                                R.mipmap.ic_launcher_new
-                            )
-                        ),
+                        painter = painterResource(R.mipmap.ic_launcher_new),
                         contentDescription = null,
                         modifier = Modifier.size(100.dp)
                     )

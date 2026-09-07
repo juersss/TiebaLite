@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -33,7 +34,6 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.stringPreferencesKey
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.activities.AppFontSizeActivity
 import com.huanchengfly.tieba.post.dataStore
@@ -149,33 +149,21 @@ fun CustomSettingsPage(
                     icons = mapOf(
                         LauncherIcons.NEW_ICON to {
                             Image(
-                                painter = rememberDrawablePainter(
-                                    drawable = LocalContext.current.getDrawable(
-                                        R.drawable.ic_launcher_new_round
-                                    )
-                                ),
+                                painter = painterResource(R.drawable.ic_launcher_new_round),
                                 contentDescription = "新图标",
                                 modifier = Modifier.size(Sizes.Medium)
                             )
                         },
                         LauncherIcons.NEW_ICON_INVERT to {
                             Image(
-                                painter = rememberDrawablePainter(
-                                    drawable = LocalContext.current.getDrawable(
-                                        R.drawable.ic_launcher_new_invert_round
-                                    )
-                                ),
+                                painter = painterResource(R.drawable.ic_launcher_new_invert_round),
                                 contentDescription = "新图标（反色）",
                                 modifier = Modifier.size(Sizes.Medium)
                             )
                         },
                         LauncherIcons.OLD_ICON to {
                             Image(
-                                painter = rememberDrawablePainter(
-                                    drawable = LocalContext.current.getDrawable(
-                                        R.drawable.ic_launcher_round
-                                    )
-                                ),
+                                painter = painterResource(R.drawable.ic_launcher_round),
                                 contentDescription = "旧图标",
                                 modifier = Modifier.size(Sizes.Medium)
                             )
