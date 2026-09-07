@@ -2,13 +2,11 @@ package com.huanchengfly.tieba.post.arch
 
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import com.huanchengfly.tieba.post.BuildConfig
 import com.huanchengfly.tieba.post.utils.PickMediasRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -92,8 +90,6 @@ inline fun <reified Event : UiEvent> CoroutineScope.onGlobalEvent(
             }
             .cancellable()
             .collect {
-                // 全局事件携带用户相册 URI(SelectedImages)等,全量 toString 只在 debug、只打类名(R6-F2)
-                if (BuildConfig.DEBUG) Log.d("GlobalEvent", "onGlobalEvent: ${it.javaClass.simpleName}") // DBG-LOG(遗留调试日志,诊断收尾时可一并移除)
                 listener(it)
             }
     }

@@ -96,7 +96,6 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.Sizes
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberDialogState
 import com.huanchengfly.tieba.post.utils.AccountUtil
 import com.huanchengfly.tieba.post.utils.ClientUtils
-import com.huanchengfly.tieba.post.utils.debugTraceNavigation
 import com.huanchengfly.tieba.post.utils.JobServiceUtil
 import com.huanchengfly.tieba.post.utils.PermissionUtils
 import com.huanchengfly.tieba.post.utils.PickMediasRequest
@@ -510,7 +509,6 @@ class MainActivityV2 : BaseComposeActivity() {
                 val navigator = TiebaNavHostDefaults.rememberBottomSheetNavigator()
                 val currentDestination by navController.currentDestinationAsState()
 
-                navController.debugTraceNavigation() // DBG-TRACE:页面切换时序
 
                 navController.navigatorProvider += navigator
 

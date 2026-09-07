@@ -4,7 +4,6 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.util.Log
 import android.view.View
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -85,7 +84,6 @@ import androidx.core.widget.addTextChangedListener
 import com.github.panpf.sketch.compose.AsyncImage
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.huanchengfly.tieba.post.App
-import com.huanchengfly.tieba.post.BuildConfig
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
@@ -290,9 +288,6 @@ internal fun ReplyPageContent(
             .sample(500)
             .distinctUntilChanged()
             .collect {
-                // $it 是用户正在输入的草稿正文,全量 toString 进日志属敏感泄露(R6-F2);
-                // debug 下只打长度,够定位草稿保存问题
-                if (BuildConfig.DEBUG) Log.d("ReplyPage", "draft collect: len=${it.length}") // DBG-LOG(遗留调试日志,诊断收尾时可一并移除)
                 if (!replySuccess) {
                     DatabaseUtil.saveDraft(hash, it)
                 }
@@ -300,22 +295,19 @@ internal fun ReplyPageContent(
     }
     val textLength by remember { derivedStateOf { curText.length } }
     val isTextEmpty by remember { derivedStateOf { curText.isEmpty() } }
-    var topTitle = when (replyType) {
-        ReplyType.TOPIC_THREAD -> context.getString(R.string.title_thread)
-        else -> context.getString(R.string.title_reply)
+    val topTitle = when (replyType) {
+        ReplyType.TOPIC_THREAD -> stringResource(R.string.title_thread)
+        else -> stringResource(R.string.title_reply)
     }
-    LaunchedEffect(replyType) {
-        topTitle = when (replyType) {
-            ReplyType.TOPIC_THREAD -> context.getString(R.string.title_thread)
-            else -> context.getString(R.string.title_reply)
-        }
-    }
+    // hint 的三串标题在组合期取出(coroutine 内不可调用 @Composable 的 stringResource)
+    val hintThread = stringResource(R.string.tip_thread_content)
+    val hintReplyUser = stringResource(R.string.hint_reply, replyUserName.orEmpty())
+    val hintReply = stringResource(R.string.tip_reply)
     LaunchedEffect(replyType, editTextView) {
         editTextView?.hint = when {
-            replyType == ReplyType.TOPIC_THREAD -> context.getString(R.string.tip_thread_content)
-            subPostId != null && subPostId != 0L && replyUserName != null ->
-                context.getString(R.string.hint_reply, replyUserName)
-            else -> context.getString(R.string.tip_reply)
+            replyType == ReplyType.TOPIC_THREAD -> hintThread
+            subPostId != null && subPostId != 0L && replyUserName != null -> hintReplyUser
+            else -> hintReply
         }
     }
     viewModel.onEvent<ReplyUiEvent.ReplySuccess> {

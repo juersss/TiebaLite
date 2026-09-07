@@ -32,8 +32,6 @@ import com.huanchengfly.tieba.post.arch.wrapImmutable
 import com.huanchengfly.tieba.post.repository.FrsPageRepository
 import com.huanchengfly.tieba.post.ui.models.ThreadItemData
 import com.huanchengfly.tieba.post.ui.models.distinctById
-import com.huanchengfly.tieba.post.utils.debugTraceForumListChange
-import com.huanchengfly.tieba.post.utils.debugTraceIntentBranch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -55,12 +53,8 @@ abstract class ForumThreadListViewModel :
     BaseViewModel<ForumThreadListUiIntent, ForumThreadListPartialChange, ForumThreadListUiState, ForumThreadListUiEvent>() {
     override fun createInitialState(): ForumThreadListUiState = ForumThreadListUiState()
 
-    /** 追踪日志标签(外部定位:进度回退排查) */
-    private val vmTraceTag get() = "FORUM_VM[${javaClass.simpleName}]"
-
-    override fun dispatchEvent(partialChange: ForumThreadListPartialChange): UiEvent? {
-        debugTraceForumListChange(vmTraceTag, partialChange) // DBG-TRACE:数据变更权威记录
-        return when (partialChange) {
+    override fun dispatchEvent(partialChange: ForumThreadListPartialChange): UiEvent? =
+        when (partialChange) {
             is ForumThreadListPartialChange.FirstLoad.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
             is ForumThreadListPartialChange.Refresh.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
             is ForumThreadListPartialChange.LoadMore.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
@@ -114,7 +108,6 @@ abstract class ForumThreadListViewModel :
 
             else -> null
         }
-    }
 
     /** 只对齐本次重载实际涉及的对象(未重载的历史记录不动,防止跨对象污染) */
     private fun rebaseLoaded(threadList: List<ThreadItemData>) {
@@ -149,7 +142,6 @@ private class ForumThreadListPartialChangeProducer(val type: ForumThreadListType
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun toPartialChangeFlow(intentFlow: Flow<ForumThreadListUiIntent>): Flow<ForumThreadListPartialChange> =
         merge(
-            debugTraceIntentBranch(type, intentFlow), // DBG-TRACE:意图追踪分支
             intentFlow.filterIsInstance<ForumThreadListUiIntent.FirstLoad>()
                 .flatMapConcat { it.producePartialChange() },
             intentFlow.filterIsInstance<ForumThreadListUiIntent.Refresh>()
