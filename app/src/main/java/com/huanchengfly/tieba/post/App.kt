@@ -1,5 +1,6 @@
 package com.huanchengfly.tieba.post
 
+import com.huanchengfly.tieba.post.api.params.ClientUtils
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
@@ -12,6 +13,7 @@ import android.graphics.ImageDecoder
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Process
+import com.huanchengfly.tieba.post.api.session.SessionProviders
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.annotation.Keep
@@ -42,19 +44,23 @@ import com.huanchengfly.tieba.post.components.OAIDGetter
 import com.huanchengfly.tieba.post.ui.common.theme.compose.dynamicTonalPalette
 import com.huanchengfly.tieba.post.ui.common.theme.interfaces.ThemeSwitcher
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.utils.AccountUtil
 import com.huanchengfly.tieba.post.utils.AppIconUtil
 import com.huanchengfly.tieba.post.utils.BlockManager
-import com.huanchengfly.tieba.post.utils.ClientUtils
 import com.huanchengfly.tieba.post.utils.EmoticonManager
+import com.huanchengfly.tieba.post.utils.ProcessUtil
 import com.huanchengfly.tieba.post.utils.SharedPreferencesUtil
 import com.huanchengfly.tieba.post.utils.ThemeUtil
 import com.huanchengfly.tieba.post.utils.Util
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.SettingsKeys
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.applicationMetaData
 import com.huanchengfly.tieba.post.utils.packageInfo
+import com.huanchengfly.tieba.post.session.SessionManager
 import dagger.hilt.android.HiltAndroidApp
 import java.nio.ByteBuffer
+import javax.inject.Inject
 import kotlin.concurrent.thread
 import kotlinx.coroutines.runBlocking
 
@@ -62,6 +68,10 @@ import kotlinx.coroutines.runBlocking
 @HiltAndroidApp
 class App : Application(), SketchFactory {
     private val mActivityList: MutableList<Activity> = mutableListOf()
+
+    /** 会话层（Phase 6 起由 Hilt 注入；`App.onCreate` 里 [AccountUtil.attach] 后全局可用） */
+    @Inject
+    lateinit var sessionManager: SessionManager
 
     @RequiresApi(api = 28)
     private fun setWebViewPath(context: Context) {
@@ -85,12 +95,31 @@ class App : Application(), SketchFactory {
 
     override fun onCreate() {
         INSTANCE = this
+        // 结构大改 Phase 3a：api 层静态上下文（Retrofit 默认参数等）经此入口点取 Provider。
+        // 必须早于任何会发请求的初始化——ClientUtils.init 会立刻在后台起 sync 请求
+        // （实测 2026-09-17：装晚了直接 IllegalStateException 崩溃在 getScreenWidth）。
+        // 这里只存 Context，真正的 Hilt 入口点解析是懒进行的，此时机安全。
+        SessionProviders.install(this)
         super.onCreate()
-        ClientUtils.init(this)
+        // 挂账 §三-1 收口（Phase 8）：把"组合期惰性 runBlocking 读 DataStore（theme 链）"
+        // 收束为**启动期一次显式预热**。此前进程内第一个读者是谁不确定——若恰好是组合期的
+        // 主题链，主线程就要在首帧里同步读盘；现在预热固定发生在这里（Activity/Compose 之前），
+        // 之后所有 Settings.value / Settings.state 读都是纯内存。
+        // 框架早于 onCreate 的读（getResources 取 fontScale）仍走同一处的冷启兜底阻塞读，语义不变。
+        appPreferences.warmUp()
+        // 多进程口径（2026-09-26 收口，挂账 §三-16 / §8.7 候选 4）：
+        // App.onCreate 在每个进程都跑，而 :oksign 是 manifest 声明的独立进程。
+        // client_id/sample_id/baidu_id 的**联网同步与落盘只在主进程做**——DataStore
+        // 不支持多进程并发写，第二写者会让主进程的设置丢更新。非主进程仍读内存快照
+        // （请求参数要用），只是不 sync、不写盘。判定见 utils/ProcessUtil。
+        ClientUtils.init(syncEnabled = ProcessUtil.isMainProcess(this))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             setWebViewPath(this)
         }
+        // Phase 6：会话层切 Hilt 注入（AccountUtil 降为转发门面）
+        AccountUtil.attach(sessionManager)
         AccountUtil.init(this)
+        OpRecordStore.init(this)
         Config.init(this)
         val isSelfBuild = applicationMetaData.getBoolean("is_self_build")
         AppIconUtil.setIcon()
@@ -99,8 +128,9 @@ class App : Application(), SketchFactory {
         registerActivityLifecycleCallbacks(ClipBoardLinkDetector)
         registerActivityLifecycleCallbacks(OAIDGetter)
         thread {
-            runBlocking { BlockManager.init() }
-            EmoticonManager.init(this@App)
+            // 与 OpRecordStore.loadAndMerge(R5-F1)同口径:裸线程抛错=启动期崩进程
+            runCatching { runBlocking { BlockManager.init() } }
+            runCatching { EmoticonManager.init(this@App) }
         }
     }
 
@@ -111,7 +141,7 @@ class App : Application(), SketchFactory {
     //禁止app字体大小跟随系统字体大小调节
     override fun getResources(): Resources {
         //INSTANCE = this
-        val fontScale = appPreferences.fontScale
+        val fontScale = appPreferences.fontScale.value
         val resources = super.getResources()
         if (resources.configuration.fontScale != fontScale) {
             val configuration = resources.configuration
@@ -275,15 +305,15 @@ class App : Application(), SketchFactory {
                             dynamicTonalPalette.primary40.toArgb()
                         }
                     } else if (ThemeUtil.THEME_CUSTOM == theme) {
-                        val customPrimaryColorStr = context.appPreferences.customPrimaryColor
+                        val customPrimaryColorStr = context.appPreferences.customPrimaryColor.value
                         return if (customPrimaryColorStr != null) {
                             Color.parseColor(customPrimaryColorStr)
-                        } else getColorByAttr(context, attrId, ThemeUtil.THEME_DEFAULT)
+                        } else getColorByAttr(context, attrId, SettingsKeys.THEME_DEFAULT)
                     } else if (ThemeUtil.isTranslucentTheme(theme)) {
-                        val primaryColorStr = context.appPreferences.translucentPrimaryColor
+                        val primaryColorStr = context.appPreferences.translucentPrimaryColor.value
                         return if (primaryColorStr != null) {
                             Color.parseColor(primaryColorStr)
-                        } else getColorByAttr(context, attrId, ThemeUtil.THEME_DEFAULT)
+                        } else getColorByAttr(context, attrId, SettingsKeys.THEME_DEFAULT)
                     }
                     return context.getColorCompat(
                         resources.getIdentifier(
@@ -304,7 +334,7 @@ class App : Application(), SketchFactory {
                         }
                     } else if (ThemeUtil.isNightMode(theme)) {
                         context.getColorCompat(R.color.theme_color_new_primary_night)
-                    } else if (theme == ThemeUtil.THEME_DEFAULT) {
+                    } else if (theme == SettingsKeys.THEME_DEFAULT) {
                         context.getColorCompat(
                             R.color.theme_color_new_primary_light
                         )
@@ -356,7 +386,7 @@ class App : Application(), SketchFactory {
                             )
                         )
                     } else {
-                        val isPrimaryColor = context.appPreferences.toolbarPrimaryColor
+                        val isPrimaryColor = context.appPreferences.toolbarPrimaryColor.value
                         if (isPrimaryColor) {
                             getColorByAttr(context, R.attr.colorPrimary, theme)
                         } else {

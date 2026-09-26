@@ -1,0 +1,455 @@
+// ===== SettingsKeys.kt 键名常量块（生成自 settings-baseline.json，勿手改；改键名先改基线）=====
+object SettingsKeys {
+    // ── 默认值常量（原为 app 侧 ThemeUtil/LauncherIcons 的值，迁入 core:data 保持单一事实源）──
+    const val THEME_DEFAULT = "tieba"
+    const val TRANSLUCENT_THEME_LIGHT = 0
+    const val DEFAULT_APP_ICON = "com.huanchengfly.tieba.post.MainActivityV2"
+
+    // ── 键名（62 个，键名红线：一字不动）──
+    const val KEY_USER_LIKE_LAST_REQUEST_UNIX = "userLikeLastRequestUnix"
+    const val KEY_IGNORE_BATTERY_OPTIMIZATIONS_DIALOG = "ignoreBatteryOptimizationsDialog"
+    const val KEY_APP_ICON = "app_icon"
+    const val KEY_USE_THEMED_ICON = "useThemedIcon"
+    const val KEY_DEBUG_MODE = "debug_mode"
+    const val KEY_AUTO_SIGN = "auto_sign"
+    const val KEY_AUTO_SIGN_TIME = "auto_sign_time"
+    const val KEY_BLOCK_VIDEO = "blockVideo"
+    const val KEY_SHOW_FOLLOWED_ONLY = "showFollowedOnly"
+    const val KEY_CHECK_CI_UPDATE = "checkCIUpdate"
+    const val KEY_COLLECT_THREAD_SEE_LZ = "collect_thread_see_lz"
+    const val KEY_COLLECT_THREAD_DESC_SORT = "collect_thread_desc_sort"
+    const val KEY_CUSTOM_PRIMARY_COLOR = "custom_primary_color"
+    const val KEY_CUSTOM_STATUS_BAR_FONT_DARK = "custom_status_bar_font_dark"
+    const val KEY_TOOLBAR_PRIMARY_COLOR = "custom_toolbar_primary_color"
+    const val KEY_DEFAULT_SORT_TYPE = "default_sort_type"
+    const val KEY_DARK_THEME = "dark_theme"
+    const val KEY_DO_NOT_USE_PHOTO_PICKER = "doNotUsePhotoPicker"
+    const val KEY_USE_DYNAMIC_COLOR_THEME = "useDynamicColorTheme"
+    const val KEY_FOLLOW_SYSTEM_NIGHT = "follow_system_night"
+    const val KEY_FONT_SCALE = "fontScale"
+    const val KEY_FORUM_FAB_FUNCTION = "forumFabFunction"
+    const val KEY_HIDE_BLOCKED_CONTENT = "hideBlockedContent"
+    const val KEY_HIDE_EXPLORE = "hideExplore"
+    const val KEY_DEFAULT_START = "defaultStart"
+    const val KEY_HIDE_FORUM_INTRO_AND_STAT = "hideForumIntroAndStat"
+    const val KEY_INCOGNITO_MODE = "incognitoMode"
+    const val KEY_HIDE_MEDIA = "hideMedia"
+    const val KEY_HIDE_REPLY = "hideReply"
+    const val KEY_HOME_PAGE_SCROLL = "homePageScroll"
+    const val KEY_HOME_PAGE_SHOW_HISTORY_FORUM = "homePageShowHistoryForum"
+    const val KEY_IMAGE_DARKEN_WHEN_NIGHT_MODE = "imageDarkenWhenNightMode"
+    const val KEY_IMAGE_LOAD_TYPE = "image_load_type"
+    const val KEY_IME_HEIGHT = "imeHeight"
+    const val KEY_LIFT_UP_BOTTOM_BAR = "liftUpBottomBar"
+    const val KEY_LIST_ITEMS_BACKGROUND_INTERMIXED = "listItemsBackgroundIntermixed"
+    const val KEY_LIST_SINGLE = "listSingle"
+    const val KEY_LITTLE_TAIL = "little_tail"
+    const val KEY_LOAD_PICTURE_WHEN_SCROLL = "loadPictureWhenScroll"
+    const val KEY_OLD_THEME = "old_theme"
+    const val KEY_OKSIGN_SLOW_MODE = "oksign_slow_mode"
+    const val KEY_OKSIGN_USE_OFFICIAL_OKSIGN = "oksign_use_official_oksign"
+    const val KEY_OKSIGN_FAIL_AUTO_STOP = "oksign_fail_auto_stop"
+    const val KEY_PIC_WATERMARK_TYPE = "pic_watermark_type"
+    const val KEY_POST_OR_REPLY_WARNING = "postOrReplyWarning"
+    const val KEY_RADIUS = "radius"
+    const val KEY_SIGN_DAY = "sign_day"
+    const val KEY_SHOW_BLOCK_TIP = "showBlockTip"
+    const val KEY_SHOW_BOTH_USERNAME_AND_NICKNAME = "show_both_username_and_nickname"
+    const val KEY_SHOW_DISAGREE_BUTTON = "show_disagree_btn"
+    const val KEY_SHOW_EXPERIMENTAL_FEATURES = "showExperimentalFeatures"
+    const val KEY_SHOW_SHORTCUT_IN_THREAD = "showShortcutInThread"
+    const val KEY_SHOW_TOP_FORUM_IN_NORMAL_LIST = "show_top_forum_in_normal_list"
+    const val KEY_STATUS_BAR_DARKER = "status_bar_darker"
+    const val KEY_THEME = "theme"
+    const val KEY_TRANSLUCENT_BACKGROUND_ALPHA = "translucent_background_alpha"
+    const val KEY_TRANSLUCENT_BACKGROUND_BLUR = "translucent_background_blur"
+    const val KEY_TRANSLUCENT_BACKGROUND_THEME = "translucent_background_theme"
+    const val KEY_TRANSLUCENT_THEME_BACKGROUND_PATH = "translucent_theme_background_path"
+    const val KEY_TRANSLUCENT_PRIMARY_COLOR = "translucent_primary_color"
+    const val KEY_USE_CUSTOM_TABS = "use_custom_tabs"
+    const val KEY_USE_WEB_VIEW = "use_webview"
+}
+
+// ===== AppPreferencesUtils.kt 属性声明块 =====
+    var userLikeLastRequestUnix by DataStoreDelegates.long(defaultValue = 0L, key = SettingsKeys.KEY_USER_LIKE_LAST_REQUEST_UNIX)
+    var ignoreBatteryOptimizationsDialog by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_IGNORE_BATTERY_OPTIMIZATIONS_DIALOG)
+    var appIcon by DataStoreDelegates.string(defaultValue = SettingsKeys.DEFAULT_APP_ICON, key = SettingsKeys.KEY_APP_ICON)
+    var useThemedIcon by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_USE_THEMED_ICON)
+    var debugMode by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_DEBUG_MODE)
+    var autoSign by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_AUTO_SIGN)
+    var autoSignTime by DataStoreDelegates.string(defaultValue = "09:00", key = SettingsKeys.KEY_AUTO_SIGN_TIME)
+    var blockVideo by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_BLOCK_VIDEO)
+    var showFollowedOnly by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_SHOW_FOLLOWED_ONLY)
+    var checkCIUpdate by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_CHECK_CI_UPDATE)
+    var collectThreadSeeLz by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_COLLECT_THREAD_SEE_LZ)
+    var collectThreadDescSort by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_COLLECT_THREAD_DESC_SORT)
+    var customPrimaryColor by DataStoreDelegates.string(key = SettingsKeys.KEY_CUSTOM_PRIMARY_COLOR)
+    var customStatusBarFontDark by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_CUSTOM_STATUS_BAR_FONT_DARK)
+    var toolbarPrimaryColor by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_TOOLBAR_PRIMARY_COLOR)
+    var defaultSortType by DataStoreDelegates.string(defaultValue = "0", key = SettingsKeys.KEY_DEFAULT_SORT_TYPE)
+    var darkTheme by DataStoreDelegates.string(defaultValue = "grey_dark", key = SettingsKeys.KEY_DARK_THEME)
+    var doNotUsePhotoPicker by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_DO_NOT_USE_PHOTO_PICKER)
+    var useDynamicColorTheme by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_USE_DYNAMIC_COLOR_THEME)
+    var followSystemNight by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_FOLLOW_SYSTEM_NIGHT)
+    var fontScale by DataStoreDelegates.float(defaultValue = 1.0f, key = SettingsKeys.KEY_FONT_SCALE)
+    var forumFabFunction by DataStoreDelegates.string(defaultValue = "post", key = SettingsKeys.KEY_FORUM_FAB_FUNCTION)
+    var hideBlockedContent by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_HIDE_BLOCKED_CONTENT)
+    var hideExplore by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_HIDE_EXPLORE)
+    var defaultStart by DataStoreDelegates.int(defaultValue = 0, key = SettingsKeys.KEY_DEFAULT_START)
+    var hideForumIntroAndStat by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_HIDE_FORUM_INTRO_AND_STAT)
+    var incognitoMode by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_INCOGNITO_MODE)
+    var hideMedia by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_HIDE_MEDIA)
+    var hideReply by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_HIDE_REPLY)
+    var homePageScroll by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_HOME_PAGE_SCROLL)
+    var homePageShowHistoryForum by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_HOME_PAGE_SHOW_HISTORY_FORUM)
+    var imageDarkenWhenNightMode by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_IMAGE_DARKEN_WHEN_NIGHT_MODE)
+    var imageLoadType by DataStoreDelegates.string(defaultValue = "0", key = SettingsKeys.KEY_IMAGE_LOAD_TYPE)
+    var imeHeight by DataStoreDelegates.int(defaultValue = 800, key = SettingsKeys.KEY_IME_HEIGHT)
+    var liftUpBottomBar by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_LIFT_UP_BOTTOM_BAR)
+    var listItemsBackgroundIntermixed by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_LIST_ITEMS_BACKGROUND_INTERMIXED)
+    var listSingle by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_LIST_SINGLE)
+    var littleTail by DataStoreDelegates.string(key = SettingsKeys.KEY_LITTLE_TAIL)
+    var loadPictureWhenScroll by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_LOAD_PICTURE_WHEN_SCROLL)
+    var oldTheme by DataStoreDelegates.string(key = SettingsKeys.KEY_OLD_THEME)
+    var oksignSlowMode by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_OKSIGN_SLOW_MODE)
+    var oksignUseOfficialOksign by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_OKSIGN_USE_OFFICIAL_OKSIGN)
+    var oksignFailAutoStop by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_OKSIGN_FAIL_AUTO_STOP)
+    var picWatermarkType by DataStoreDelegates.string(defaultValue = "2", key = SettingsKeys.KEY_PIC_WATERMARK_TYPE)
+    var postOrReplyWarning by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_POST_OR_REPLY_WARNING)
+    var radius by DataStoreDelegates.int(defaultValue = 8, key = SettingsKeys.KEY_RADIUS)
+    var signDay by DataStoreDelegates.int(defaultValue = -1, key = SettingsKeys.KEY_SIGN_DAY)
+    var showBlockTip by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_SHOW_BLOCK_TIP)
+    var showBothUsernameAndNickname by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_SHOW_BOTH_USERNAME_AND_NICKNAME)
+    var showDisagreeButton by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_SHOW_DISAGREE_BUTTON)
+    var showExperimentalFeatures by DataStoreDelegates.boolean(defaultValue = false, key = SettingsKeys.KEY_SHOW_EXPERIMENTAL_FEATURES)
+    var showShortcutInThread by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_SHOW_SHORTCUT_IN_THREAD)
+    var showTopForumInNormalList by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_SHOW_TOP_FORUM_IN_NORMAL_LIST)
+    var statusBarDarker by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_STATUS_BAR_DARKER)
+    var theme by DataStoreDelegates.string(defaultValue = SettingsKeys.THEME_DEFAULT, key = SettingsKeys.KEY_THEME)
+    var translucentBackgroundAlpha by DataStoreDelegates.int(defaultValue = 255, key = SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_ALPHA)
+    var translucentBackgroundBlur by DataStoreDelegates.int(key = SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_BLUR)
+    var translucentBackgroundTheme by DataStoreDelegates.int(defaultValue = SettingsKeys.TRANSLUCENT_THEME_LIGHT, key = SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_THEME)
+    var translucentThemeBackgroundPath by DataStoreDelegates.string(key = SettingsKeys.KEY_TRANSLUCENT_THEME_BACKGROUND_PATH)
+    var translucentPrimaryColor by DataStoreDelegates.string(key = SettingsKeys.KEY_TRANSLUCENT_PRIMARY_COLOR)
+    var useCustomTabs by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_USE_CUSTOM_TABS)
+    var useWebView by DataStoreDelegates.boolean(defaultValue = true, key = SettingsKeys.KEY_USE_WEB_VIEW)
+
+// ===== SettingsRepository.kt 接口声明块（无初始化器）=====
+    val userLikeLastRequestUnix: Settings<Long>
+    val ignoreBatteryOptimizationsDialog: Settings<Boolean>
+    val appIcon: Settings<String?>
+    val useThemedIcon: Settings<Boolean>
+    val debugMode: Settings<Boolean>
+    val autoSign: Settings<Boolean>
+    val autoSignTime: Settings<String?>
+    val blockVideo: Settings<Boolean>
+    val showFollowedOnly: Settings<Boolean>
+    val checkCIUpdate: Settings<Boolean>
+    val collectThreadSeeLz: Settings<Boolean>
+    val collectThreadDescSort: Settings<Boolean>
+    val customPrimaryColor: Settings<String?>
+    val customStatusBarFontDark: Settings<Boolean>
+    val toolbarPrimaryColor: Settings<Boolean>
+    val defaultSortType: Settings<String?>
+    val darkTheme: Settings<String?>
+    val doNotUsePhotoPicker: Settings<Boolean>
+    val useDynamicColorTheme: Settings<Boolean>
+    val followSystemNight: Settings<Boolean>
+    val fontScale: Settings<Float>
+    val forumFabFunction: Settings<String?>
+    val hideBlockedContent: Settings<Boolean>
+    val hideExplore: Settings<Boolean>
+    val defaultStart: Settings<Int>
+    val hideForumIntroAndStat: Settings<Boolean>
+    val incognitoMode: Settings<Boolean>
+    val hideMedia: Settings<Boolean>
+    val hideReply: Settings<Boolean>
+    val homePageScroll: Settings<Boolean>
+    val homePageShowHistoryForum: Settings<Boolean>
+    val imageDarkenWhenNightMode: Settings<Boolean>
+    val imageLoadType: Settings<String?>
+    val imeHeight: Settings<Int>
+    val liftUpBottomBar: Settings<Boolean>
+    val listItemsBackgroundIntermixed: Settings<Boolean>
+    val listSingle: Settings<Boolean>
+    val littleTail: Settings<String?>
+    val loadPictureWhenScroll: Settings<Boolean>
+    val oldTheme: Settings<String?>
+    val oksignSlowMode: Settings<Boolean>
+    val oksignUseOfficialOksign: Settings<Boolean>
+    val oksignFailAutoStop: Settings<Boolean>
+    val picWatermarkType: Settings<String?>
+    val postOrReplyWarning: Settings<Boolean>
+    val radius: Settings<Int>
+    val signDay: Settings<Int>
+    val showBlockTip: Settings<Boolean>
+    val showBothUsernameAndNickname: Settings<Boolean>
+    val showDisagreeButton: Settings<Boolean>
+    val showExperimentalFeatures: Settings<Boolean>
+    val showShortcutInThread: Settings<Boolean>
+    val showTopForumInNormalList: Settings<Boolean>
+    val statusBarDarker: Settings<Boolean>
+    val theme: Settings<String?>
+    val translucentBackgroundAlpha: Settings<Int>
+    val translucentBackgroundBlur: Settings<Int>
+    val translucentBackgroundTheme: Settings<Int>
+    val translucentThemeBackgroundPath: Settings<String?>
+    val translucentPrimaryColor: Settings<String?>
+    val useCustomTabs: Settings<Boolean>
+    val useWebView: Settings<Boolean>
+
+// ===== SettingsRepository.kt override 块 =====
+    override val userLikeLastRequestUnix: Settings<Long> = SimpleSettings(longPreferencesKey(SettingsKeys.KEY_USER_LIKE_LAST_REQUEST_UNIX), 0L)
+    override val ignoreBatteryOptimizationsDialog: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_IGNORE_BATTERY_OPTIMIZATIONS_DIALOG), false)
+    override val appIcon: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_APP_ICON) as Preferences.Key<String?>, SettingsKeys.DEFAULT_APP_ICON)
+    override val useThemedIcon: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_USE_THEMED_ICON), false)
+    override val debugMode: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_DEBUG_MODE), false)
+    override val autoSign: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_AUTO_SIGN), false)
+    override val autoSignTime: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_AUTO_SIGN_TIME) as Preferences.Key<String?>, "09:00")
+    override val blockVideo: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_BLOCK_VIDEO), false)
+    override val showFollowedOnly: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_SHOW_FOLLOWED_ONLY), false)
+    override val checkCIUpdate: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_CHECK_CI_UPDATE), false)
+    override val collectThreadSeeLz: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_COLLECT_THREAD_SEE_LZ), true)
+    override val collectThreadDescSort: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_COLLECT_THREAD_DESC_SORT), false)
+    override val customPrimaryColor: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_CUSTOM_PRIMARY_COLOR) as Preferences.Key<String?>, null)
+    override val customStatusBarFontDark: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_CUSTOM_STATUS_BAR_FONT_DARK), false)
+    override val toolbarPrimaryColor: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_TOOLBAR_PRIMARY_COLOR), false)
+    override val defaultSortType: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_DEFAULT_SORT_TYPE) as Preferences.Key<String?>, "0")
+    override val darkTheme: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_DARK_THEME) as Preferences.Key<String?>, "grey_dark")
+    override val doNotUsePhotoPicker: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_DO_NOT_USE_PHOTO_PICKER), false)
+    override val useDynamicColorTheme: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_USE_DYNAMIC_COLOR_THEME), false)
+    override val followSystemNight: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_FOLLOW_SYSTEM_NIGHT), true)
+    override val fontScale: Settings<Float> = SimpleSettings(floatPreferencesKey(SettingsKeys.KEY_FONT_SCALE), 1.0f)
+    override val forumFabFunction: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_FORUM_FAB_FUNCTION) as Preferences.Key<String?>, "post")
+    override val hideBlockedContent: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_HIDE_BLOCKED_CONTENT), false)
+    override val hideExplore: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_HIDE_EXPLORE), false)
+    override val defaultStart: Settings<Int> = SimpleSettings(intPreferencesKey(SettingsKeys.KEY_DEFAULT_START), 0)
+    override val hideForumIntroAndStat: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_HIDE_FORUM_INTRO_AND_STAT), false)
+    override val incognitoMode: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_INCOGNITO_MODE), false)
+    override val hideMedia: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_HIDE_MEDIA), false)
+    override val hideReply: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_HIDE_REPLY), false)
+    override val homePageScroll: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_HOME_PAGE_SCROLL), false)
+    override val homePageShowHistoryForum: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_HOME_PAGE_SHOW_HISTORY_FORUM), true)
+    override val imageDarkenWhenNightMode: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_IMAGE_DARKEN_WHEN_NIGHT_MODE), true)
+    override val imageLoadType: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_IMAGE_LOAD_TYPE) as Preferences.Key<String?>, "0")
+    override val imeHeight: Settings<Int> = SimpleSettings(intPreferencesKey(SettingsKeys.KEY_IME_HEIGHT), 800)
+    override val liftUpBottomBar: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_LIFT_UP_BOTTOM_BAR), true)
+    override val listItemsBackgroundIntermixed: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_LIST_ITEMS_BACKGROUND_INTERMIXED), true)
+    override val listSingle: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_LIST_SINGLE), false)
+    override val littleTail: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_LITTLE_TAIL) as Preferences.Key<String?>, null)
+    override val loadPictureWhenScroll: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_LOAD_PICTURE_WHEN_SCROLL), true)
+    override val oldTheme: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_OLD_THEME) as Preferences.Key<String?>, null)
+    override val oksignSlowMode: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_OKSIGN_SLOW_MODE), true)
+    override val oksignUseOfficialOksign: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_OKSIGN_USE_OFFICIAL_OKSIGN), true)
+    override val oksignFailAutoStop: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_OKSIGN_FAIL_AUTO_STOP), true)
+    override val picWatermarkType: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_PIC_WATERMARK_TYPE) as Preferences.Key<String?>, "2")
+    override val postOrReplyWarning: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_POST_OR_REPLY_WARNING), true)
+    override val radius: Settings<Int> = SimpleSettings(intPreferencesKey(SettingsKeys.KEY_RADIUS), 8)
+    override val signDay: Settings<Int> = SimpleSettings(intPreferencesKey(SettingsKeys.KEY_SIGN_DAY), -1)
+    override val showBlockTip: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_SHOW_BLOCK_TIP), true)
+    override val showBothUsernameAndNickname: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_SHOW_BOTH_USERNAME_AND_NICKNAME), false)
+    override val showDisagreeButton: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_SHOW_DISAGREE_BUTTON), true)
+    override val showExperimentalFeatures: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_SHOW_EXPERIMENTAL_FEATURES), false)
+    override val showShortcutInThread: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_SHOW_SHORTCUT_IN_THREAD), true)
+    override val showTopForumInNormalList: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_SHOW_TOP_FORUM_IN_NORMAL_LIST), true)
+    override val statusBarDarker: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_STATUS_BAR_DARKER), true)
+    override val theme: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_THEME) as Preferences.Key<String?>, SettingsKeys.THEME_DEFAULT)
+    override val translucentBackgroundAlpha: Settings<Int> = SimpleSettings(intPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_ALPHA), 255)
+    override val translucentBackgroundBlur: Settings<Int> = SimpleSettings(intPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_BLUR), 0)
+    override val translucentBackgroundTheme: Settings<Int> = SimpleSettings(intPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_THEME), SettingsKeys.TRANSLUCENT_THEME_LIGHT)
+    override val translucentThemeBackgroundPath: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_THEME_BACKGROUND_PATH) as Preferences.Key<String?>, null)
+    override val translucentPrimaryColor: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_PRIMARY_COLOR) as Preferences.Key<String?>, null)
+    override val useCustomTabs: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_USE_CUSTOM_TABS), true)
+    override val useWebView: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_USE_WEB_VIEW), true)
+
+// ===== 测试：62 项写入 =====
+        repo.userLikeLastRequestUnix.set(1L)
+        repo.ignoreBatteryOptimizationsDialog.set(true)
+        repo.appIcon.set("t")
+        repo.useThemedIcon.set(true)
+        repo.debugMode.set(true)
+        repo.autoSign.set(true)
+        repo.autoSignTime.set("t")
+        repo.blockVideo.set(true)
+        repo.showFollowedOnly.set(true)
+        repo.checkCIUpdate.set(true)
+        repo.collectThreadSeeLz.set(true)
+        repo.collectThreadDescSort.set(true)
+        repo.customPrimaryColor.set("t")
+        repo.customStatusBarFontDark.set(true)
+        repo.toolbarPrimaryColor.set(true)
+        repo.defaultSortType.set("t")
+        repo.darkTheme.set("t")
+        repo.doNotUsePhotoPicker.set(true)
+        repo.useDynamicColorTheme.set(true)
+        repo.followSystemNight.set(true)
+        repo.fontScale.set(2.0f)
+        repo.forumFabFunction.set("t")
+        repo.hideBlockedContent.set(true)
+        repo.hideExplore.set(true)
+        repo.defaultStart.set(1)
+        repo.hideForumIntroAndStat.set(true)
+        repo.incognitoMode.set(true)
+        repo.hideMedia.set(true)
+        repo.hideReply.set(true)
+        repo.homePageScroll.set(true)
+        repo.homePageShowHistoryForum.set(true)
+        repo.imageDarkenWhenNightMode.set(true)
+        repo.imageLoadType.set("t")
+        repo.imeHeight.set(1)
+        repo.liftUpBottomBar.set(true)
+        repo.listItemsBackgroundIntermixed.set(true)
+        repo.listSingle.set(true)
+        repo.littleTail.set("t")
+        repo.loadPictureWhenScroll.set(true)
+        repo.oldTheme.set("t")
+        repo.oksignSlowMode.set(true)
+        repo.oksignUseOfficialOksign.set(true)
+        repo.oksignFailAutoStop.set(true)
+        repo.picWatermarkType.set("t")
+        repo.postOrReplyWarning.set(true)
+        repo.radius.set(1)
+        repo.signDay.set(1)
+        repo.showBlockTip.set(true)
+        repo.showBothUsernameAndNickname.set(true)
+        repo.showDisagreeButton.set(true)
+        repo.showExperimentalFeatures.set(true)
+        repo.showShortcutInThread.set(true)
+        repo.showTopForumInNormalList.set(true)
+        repo.statusBarDarker.set(true)
+        repo.theme.set("t")
+        repo.translucentBackgroundAlpha.set(1)
+        repo.translucentBackgroundBlur.set(1)
+        repo.translucentBackgroundTheme.set(1)
+        repo.translucentThemeBackgroundPath.set("t")
+        repo.translucentPrimaryColor.set("t")
+        repo.useCustomTabs.set(true)
+        repo.useWebView.set(true)
+
+// ===== 测试：62 项断言 =====
+        assertEquals(1L, prefs[longPreferencesKey(SettingsKeys.KEY_USER_LIKE_LAST_REQUEST_UNIX)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_IGNORE_BATTERY_OPTIMIZATIONS_DIALOG)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_APP_ICON)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_USE_THEMED_ICON)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_DEBUG_MODE)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_AUTO_SIGN)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_AUTO_SIGN_TIME)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_BLOCK_VIDEO)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_SHOW_FOLLOWED_ONLY)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_CHECK_CI_UPDATE)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_COLLECT_THREAD_SEE_LZ)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_COLLECT_THREAD_DESC_SORT)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_CUSTOM_PRIMARY_COLOR)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_CUSTOM_STATUS_BAR_FONT_DARK)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_TOOLBAR_PRIMARY_COLOR)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_DEFAULT_SORT_TYPE)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_DARK_THEME)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_DO_NOT_USE_PHOTO_PICKER)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_USE_DYNAMIC_COLOR_THEME)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_FOLLOW_SYSTEM_NIGHT)])
+        assertEquals(2.0f, prefs[floatPreferencesKey(SettingsKeys.KEY_FONT_SCALE)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_FORUM_FAB_FUNCTION)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_HIDE_BLOCKED_CONTENT)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_HIDE_EXPLORE)])
+        assertEquals(1, prefs[intPreferencesKey(SettingsKeys.KEY_DEFAULT_START)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_HIDE_FORUM_INTRO_AND_STAT)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_INCOGNITO_MODE)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_HIDE_MEDIA)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_HIDE_REPLY)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_HOME_PAGE_SCROLL)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_HOME_PAGE_SHOW_HISTORY_FORUM)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_IMAGE_DARKEN_WHEN_NIGHT_MODE)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_IMAGE_LOAD_TYPE)])
+        assertEquals(1, prefs[intPreferencesKey(SettingsKeys.KEY_IME_HEIGHT)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_LIFT_UP_BOTTOM_BAR)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_LIST_ITEMS_BACKGROUND_INTERMIXED)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_LIST_SINGLE)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_LITTLE_TAIL)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_LOAD_PICTURE_WHEN_SCROLL)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_OLD_THEME)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_OKSIGN_SLOW_MODE)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_OKSIGN_USE_OFFICIAL_OKSIGN)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_OKSIGN_FAIL_AUTO_STOP)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_PIC_WATERMARK_TYPE)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_POST_OR_REPLY_WARNING)])
+        assertEquals(1, prefs[intPreferencesKey(SettingsKeys.KEY_RADIUS)])
+        assertEquals(1, prefs[intPreferencesKey(SettingsKeys.KEY_SIGN_DAY)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_SHOW_BLOCK_TIP)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_SHOW_BOTH_USERNAME_AND_NICKNAME)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_SHOW_DISAGREE_BUTTON)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_SHOW_EXPERIMENTAL_FEATURES)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_SHOW_SHORTCUT_IN_THREAD)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_SHOW_TOP_FORUM_IN_NORMAL_LIST)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_STATUS_BAR_DARKER)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_THEME)])
+        assertEquals(1, prefs[intPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_ALPHA)])
+        assertEquals(1, prefs[intPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_BLUR)])
+        assertEquals(1, prefs[intPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_BACKGROUND_THEME)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_THEME_BACKGROUND_PATH)])
+        assertEquals("t", prefs[stringPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_PRIMARY_COLOR)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_USE_CUSTOM_TABS)])
+        assertEquals(true, prefs[booleanPreferencesKey(SettingsKeys.KEY_USE_WEB_VIEW)])
+
+// ===== 测试：62 项默认值对齐（APU 现值 vs repo snapshot）=====
+        assertEquals(apu.userLikeLastRequestUnix, runBlocking { repo.userLikeLastRequestUnix.snapshot() })
+        assertEquals(apu.ignoreBatteryOptimizationsDialog, runBlocking { repo.ignoreBatteryOptimizationsDialog.snapshot() })
+        assertEquals(apu.appIcon, runBlocking { repo.appIcon.snapshot() })
+        assertEquals(apu.useThemedIcon, runBlocking { repo.useThemedIcon.snapshot() })
+        assertEquals(apu.debugMode, runBlocking { repo.debugMode.snapshot() })
+        assertEquals(apu.autoSign, runBlocking { repo.autoSign.snapshot() })
+        assertEquals(apu.autoSignTime, runBlocking { repo.autoSignTime.snapshot() })
+        assertEquals(apu.blockVideo, runBlocking { repo.blockVideo.snapshot() })
+        assertEquals(apu.showFollowedOnly, runBlocking { repo.showFollowedOnly.snapshot() })
+        assertEquals(apu.checkCIUpdate, runBlocking { repo.checkCIUpdate.snapshot() })
+        assertEquals(apu.collectThreadSeeLz, runBlocking { repo.collectThreadSeeLz.snapshot() })
+        assertEquals(apu.collectThreadDescSort, runBlocking { repo.collectThreadDescSort.snapshot() })
+        assertEquals(apu.customPrimaryColor, runBlocking { repo.customPrimaryColor.snapshot() })
+        assertEquals(apu.customStatusBarFontDark, runBlocking { repo.customStatusBarFontDark.snapshot() })
+        assertEquals(apu.toolbarPrimaryColor, runBlocking { repo.toolbarPrimaryColor.snapshot() })
+        assertEquals(apu.defaultSortType, runBlocking { repo.defaultSortType.snapshot() })
+        assertEquals(apu.darkTheme, runBlocking { repo.darkTheme.snapshot() })
+        assertEquals(apu.doNotUsePhotoPicker, runBlocking { repo.doNotUsePhotoPicker.snapshot() })
+        assertEquals(apu.useDynamicColorTheme, runBlocking { repo.useDynamicColorTheme.snapshot() })
+        assertEquals(apu.followSystemNight, runBlocking { repo.followSystemNight.snapshot() })
+        assertEquals(apu.fontScale, runBlocking { repo.fontScale.snapshot() })
+        assertEquals(apu.forumFabFunction, runBlocking { repo.forumFabFunction.snapshot() })
+        assertEquals(apu.hideBlockedContent, runBlocking { repo.hideBlockedContent.snapshot() })
+        assertEquals(apu.hideExplore, runBlocking { repo.hideExplore.snapshot() })
+        assertEquals(apu.defaultStart, runBlocking { repo.defaultStart.snapshot() })
+        assertEquals(apu.hideForumIntroAndStat, runBlocking { repo.hideForumIntroAndStat.snapshot() })
+        assertEquals(apu.incognitoMode, runBlocking { repo.incognitoMode.snapshot() })
+        assertEquals(apu.hideMedia, runBlocking { repo.hideMedia.snapshot() })
+        assertEquals(apu.hideReply, runBlocking { repo.hideReply.snapshot() })
+        assertEquals(apu.homePageScroll, runBlocking { repo.homePageScroll.snapshot() })
+        assertEquals(apu.homePageShowHistoryForum, runBlocking { repo.homePageShowHistoryForum.snapshot() })
+        assertEquals(apu.imageDarkenWhenNightMode, runBlocking { repo.imageDarkenWhenNightMode.snapshot() })
+        assertEquals(apu.imageLoadType, runBlocking { repo.imageLoadType.snapshot() })
+        assertEquals(apu.imeHeight, runBlocking { repo.imeHeight.snapshot() })
+        assertEquals(apu.liftUpBottomBar, runBlocking { repo.liftUpBottomBar.snapshot() })
+        assertEquals(apu.listItemsBackgroundIntermixed, runBlocking { repo.listItemsBackgroundIntermixed.snapshot() })
+        assertEquals(apu.listSingle, runBlocking { repo.listSingle.snapshot() })
+        assertEquals(apu.littleTail, runBlocking { repo.littleTail.snapshot() })
+        assertEquals(apu.loadPictureWhenScroll, runBlocking { repo.loadPictureWhenScroll.snapshot() })
+        assertEquals(apu.oldTheme, runBlocking { repo.oldTheme.snapshot() })
+        assertEquals(apu.oksignSlowMode, runBlocking { repo.oksignSlowMode.snapshot() })
+        assertEquals(apu.oksignUseOfficialOksign, runBlocking { repo.oksignUseOfficialOksign.snapshot() })
+        assertEquals(apu.oksignFailAutoStop, runBlocking { repo.oksignFailAutoStop.snapshot() })
+        assertEquals(apu.picWatermarkType, runBlocking { repo.picWatermarkType.snapshot() })
+        assertEquals(apu.postOrReplyWarning, runBlocking { repo.postOrReplyWarning.snapshot() })
+        assertEquals(apu.radius, runBlocking { repo.radius.snapshot() })
+        assertEquals(apu.signDay, runBlocking { repo.signDay.snapshot() })
+        assertEquals(apu.showBlockTip, runBlocking { repo.showBlockTip.snapshot() })
+        assertEquals(apu.showBothUsernameAndNickname, runBlocking { repo.showBothUsernameAndNickname.snapshot() })
+        assertEquals(apu.showDisagreeButton, runBlocking { repo.showDisagreeButton.snapshot() })
+        assertEquals(apu.showExperimentalFeatures, runBlocking { repo.showExperimentalFeatures.snapshot() })
+        assertEquals(apu.showShortcutInThread, runBlocking { repo.showShortcutInThread.snapshot() })
+        assertEquals(apu.showTopForumInNormalList, runBlocking { repo.showTopForumInNormalList.snapshot() })
+        assertEquals(apu.statusBarDarker, runBlocking { repo.statusBarDarker.snapshot() })
+        assertEquals(apu.theme, runBlocking { repo.theme.snapshot() })
+        assertEquals(apu.translucentBackgroundAlpha, runBlocking { repo.translucentBackgroundAlpha.snapshot() })
+        assertEquals(apu.translucentBackgroundBlur, runBlocking { repo.translucentBackgroundBlur.snapshot() })
+        assertEquals(apu.translucentBackgroundTheme, runBlocking { repo.translucentBackgroundTheme.snapshot() })
+        assertEquals(apu.translucentThemeBackgroundPath, runBlocking { repo.translucentThemeBackgroundPath.snapshot() })
+        assertEquals(apu.translucentPrimaryColor, runBlocking { repo.translucentPrimaryColor.snapshot() })
+        assertEquals(apu.useCustomTabs, runBlocking { repo.useCustomTabs.snapshot() })
+        assertEquals(apu.useWebView, runBlocking { repo.useWebView.snapshot() })

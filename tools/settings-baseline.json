@@ -1,0 +1,374 @@
+[
+ {
+  "name": "userLikeLastRequestUnix",
+  "type": "long",
+  "key": "userLikeLastRequestUnix",
+  "default": "0L"
+ },
+ {
+  "name": "ignoreBatteryOptimizationsDialog",
+  "type": "boolean",
+  "key": "ignoreBatteryOptimizationsDialog",
+  "default": "false"
+ },
+ {
+  "name": "appIcon",
+  "type": "string",
+  "key": "app_icon",
+  "default": "LauncherIcons.DEFAULT_ICON"
+ },
+ {
+  "name": "useThemedIcon",
+  "type": "boolean",
+  "key": "useThemedIcon",
+  "default": "false"
+ },
+ {
+  "name": "debugMode",
+  "type": "boolean",
+  "key": "debug_mode",
+  "default": "false"
+ },
+ {
+  "name": "autoSign",
+  "type": "boolean",
+  "key": "auto_sign",
+  "default": "false"
+ },
+ {
+  "name": "autoSignTime",
+  "type": "string",
+  "key": "auto_sign_time",
+  "default": "\"09:00\""
+ },
+ {
+  "name": "blockVideo",
+  "type": "boolean",
+  "key": "blockVideo",
+  "default": "false"
+ },
+ {
+  "name": "showFollowedOnly",
+  "type": "boolean",
+  "key": "showFollowedOnly",
+  "default": "false"
+ },
+ {
+  "name": "checkCIUpdate",
+  "type": "boolean",
+  "key": "checkCIUpdate",
+  "default": "false"
+ },
+ {
+  "name": "collectThreadSeeLz",
+  "type": "boolean",
+  "key": "collect_thread_see_lz",
+  "default": "true"
+ },
+ {
+  "name": "collectThreadDescSort",
+  "type": "boolean",
+  "key": "collect_thread_desc_sort",
+  "default": "false"
+ },
+ {
+  "name": "customPrimaryColor",
+  "type": "string",
+  "key": "custom_primary_color",
+  "default": null
+ },
+ {
+  "name": "customStatusBarFontDark",
+  "type": "boolean",
+  "key": "custom_status_bar_font_dark",
+  "default": "false"
+ },
+ {
+  "name": "toolbarPrimaryColor",
+  "type": "boolean",
+  "key": "custom_toolbar_primary_color",
+  "default": "false"
+ },
+ {
+  "name": "defaultSortType",
+  "type": "string",
+  "key": "default_sort_type",
+  "default": "\"0\""
+ },
+ {
+  "name": "darkTheme",
+  "type": "string",
+  "key": "dark_theme",
+  "default": "\"grey_dark\""
+ },
+ {
+  "name": "doNotUsePhotoPicker",
+  "type": "boolean",
+  "key": "doNotUsePhotoPicker",
+  "default": "false"
+ },
+ {
+  "name": "useDynamicColorTheme",
+  "type": "boolean",
+  "key": "useDynamicColorTheme",
+  "default": "false"
+ },
+ {
+  "name": "followSystemNight",
+  "type": "boolean",
+  "key": "follow_system_night",
+  "default": "true"
+ },
+ {
+  "name": "fontScale",
+  "type": "float",
+  "key": "fontScale",
+  "default": "1.0f"
+ },
+ {
+  "name": "forumFabFunction",
+  "type": "string",
+  "key": "forumFabFunction",
+  "default": "\"post\""
+ },
+ {
+  "name": "hideBlockedContent",
+  "type": "boolean",
+  "key": "hideBlockedContent",
+  "default": "false"
+ },
+ {
+  "name": "hideExplore",
+  "type": "boolean",
+  "key": "hideExplore",
+  "default": "false"
+ },
+ {
+  "name": "defaultStart",
+  "type": "int",
+  "key": "defaultStart",
+  "default": "0"
+ },
+ {
+  "name": "hideForumIntroAndStat",
+  "type": "boolean",
+  "key": "hideForumIntroAndStat",
+  "default": "false"
+ },
+ {
+  "name": "incognitoMode",
+  "type": "boolean",
+  "key": "incognitoMode",
+  "default": "false"
+ },
+ {
+  "name": "hideMedia",
+  "type": "boolean",
+  "key": "hideMedia",
+  "default": "false"
+ },
+ {
+  "name": "hideReply",
+  "type": "boolean",
+  "key": "hideReply",
+  "default": "false"
+ },
+ {
+  "name": "homePageScroll",
+  "type": "boolean",
+  "key": "homePageScroll",
+  "default": "false"
+ },
+ {
+  "name": "homePageShowHistoryForum",
+  "type": "boolean",
+  "key": "homePageShowHistoryForum",
+  "default": "true"
+ },
+ {
+  "name": "imageDarkenWhenNightMode",
+  "type": "boolean",
+  "key": "imageDarkenWhenNightMode",
+  "default": "true"
+ },
+ {
+  "name": "imageLoadType",
+  "type": "string",
+  "key": "image_load_type",
+  "default": "\"0\""
+ },
+ {
+  "name": "imeHeight",
+  "type": "int",
+  "key": "imeHeight",
+  "default": "800"
+ },
+ {
+  "name": "liftUpBottomBar",
+  "type": "boolean",
+  "key": "liftUpBottomBar",
+  "default": "true"
+ },
+ {
+  "name": "listItemsBackgroundIntermixed",
+  "type": "boolean",
+  "key": "listItemsBackgroundIntermixed",
+  "default": "true"
+ },
+ {
+  "name": "listSingle",
+  "type": "boolean",
+  "key": "listSingle",
+  "default": "false"
+ },
+ {
+  "name": "littleTail",
+  "type": "string",
+  "key": "little_tail",
+  "default": null
+ },
+ {
+  "name": "loadPictureWhenScroll",
+  "type": "boolean",
+  "key": "loadPictureWhenScroll",
+  "default": "true"
+ },
+ {
+  "name": "oldTheme",
+  "type": "string",
+  "key": "old_theme",
+  "default": null
+ },
+ {
+  "name": "oksignSlowMode",
+  "type": "boolean",
+  "key": "oksign_slow_mode",
+  "default": "true"
+ },
+ {
+  "name": "oksignUseOfficialOksign",
+  "type": "boolean",
+  "key": "oksign_use_official_oksign",
+  "default": "true"
+ },
+ {
+  "name": "oksignFailAutoStop",
+  "type": "boolean",
+  "key": "oksign_fail_auto_stop",
+  "default": "true"
+ },
+ {
+  "name": "picWatermarkType",
+  "type": "string",
+  "key": "pic_watermark_type",
+  "default": "\"2\""
+ },
+ {
+  "name": "postOrReplyWarning",
+  "type": "boolean",
+  "key": "postOrReplyWarning",
+  "default": "true"
+ },
+ {
+  "name": "radius",
+  "type": "int",
+  "key": "radius",
+  "default": "8"
+ },
+ {
+  "name": "signDay",
+  "type": "int",
+  "key": "sign_day",
+  "default": "-1"
+ },
+ {
+  "name": "showBlockTip",
+  "type": "boolean",
+  "key": "showBlockTip",
+  "default": "true"
+ },
+ {
+  "name": "showBothUsernameAndNickname",
+  "type": "boolean",
+  "key": "show_both_username_and_nickname",
+  "default": "false"
+ },
+ {
+  "name": "showDisagreeButton",
+  "type": "boolean",
+  "key": "show_disagree_btn",
+  "default": "true"
+ },
+ {
+  "name": "showExperimentalFeatures",
+  "type": "boolean",
+  "key": "showExperimentalFeatures",
+  "default": "false"
+ },
+ {
+  "name": "showShortcutInThread",
+  "type": "boolean",
+  "key": "showShortcutInThread",
+  "default": "true"
+ },
+ {
+  "name": "showTopForumInNormalList",
+  "type": "boolean",
+  "key": "show_top_forum_in_normal_list",
+  "default": "true"
+ },
+ {
+  "name": "statusBarDarker",
+  "type": "boolean",
+  "key": "status_bar_darker",
+  "default": "true"
+ },
+ {
+  "name": "theme",
+  "type": "string",
+  "key": "theme",
+  "default": "ThemeUtil.THEME_DEFAULT"
+ },
+ {
+  "name": "translucentBackgroundAlpha",
+  "type": "int",
+  "key": "translucent_background_alpha",
+  "default": "255"
+ },
+ {
+  "name": "translucentBackgroundBlur",
+  "type": "int",
+  "key": "translucent_background_blur",
+  "default": null
+ },
+ {
+  "name": "translucentBackgroundTheme",
+  "type": "int",
+  "key": "translucent_background_theme",
+  "default": "TRANSLUCENT_THEME_LIGHT"
+ },
+ {
+  "name": "translucentThemeBackgroundPath",
+  "type": "string",
+  "key": "translucent_theme_background_path",
+  "default": null
+ },
+ {
+  "name": "translucentPrimaryColor",
+  "type": "string",
+  "key": "translucent_primary_color",
+  "default": null
+ },
+ {
+  "name": "useCustomTabs",
+  "type": "boolean",
+  "key": "use_custom_tabs",
+  "default": "true"
+ },
+ {
+  "name": "useWebView",
+  "type": "boolean",
+  "key": "use_webview",
+  "default": "true"
+ }
+]

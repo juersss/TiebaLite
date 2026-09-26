@@ -16,8 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.ui.common.theme.compose.ExtendedTheme
-import com.huanchengfly.tieba.post.utils.appPreferences
-
+import com.huanchengfly.tieba.post.core.data.appPreferences
 @Composable
 fun BlockTip(
     text: @Composable () -> Unit = { Text(text = stringResource(id = R.string.tip_blocked_content)) },
@@ -42,7 +41,7 @@ fun BlockableContent(
     blocked: Boolean,
     modifier: Modifier = Modifier,
     blockedTip: @Composable () -> Unit = { BlockTip() },
-    hideBlockedContent: Boolean = LocalContext.current.appPreferences.hideBlockedContent,
+    hideBlockedContent: Boolean = LocalContext.current.appPreferences.hideBlockedContent.value,
     content: @Composable () -> Unit,
 ) {
     if (!blocked) {

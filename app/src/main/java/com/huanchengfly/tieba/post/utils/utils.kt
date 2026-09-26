@@ -17,6 +17,7 @@ import android.view.View
 import androidx.annotation.ColorInt
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.appcompat.R as AppCompatR
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -24,12 +25,13 @@ import com.github.panpf.sketch.request.LoadRequest
 import com.github.panpf.sketch.request.LoadResult
 import com.github.panpf.sketch.request.execute
 import com.google.android.material.snackbar.Snackbar
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaException
-import com.huanchengfly.tieba.post.dataStore
+import com.huanchengfly.tieba.post.core.data.dataStore
 import com.huanchengfly.tieba.post.dpToPxFloat
-import com.huanchengfly.tieba.post.getBoolean
+import com.huanchengfly.tieba.post.core.data.getBoolean
 import com.huanchengfly.tieba.post.toastShort
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ColorStateListUtils
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
@@ -76,7 +78,8 @@ fun getItemBackgroundDrawable(
     }
     return if (ripple) {
         wrapRipple(
-            Util.getColorByAttr(context, R.attr.colorControlHighlight, R.color.transparent),
+            // nonTransitiveRClass=true：colorControlHighlight 是 appcompat 的 attr，须走库的 R
+            Util.getColorByAttr(context, AppCompatR.attr.colorControlHighlight, R.color.transparent),
             shape
         )
     } else {
@@ -104,7 +107,7 @@ fun getRadiusDrawable(
         wrapRipple(
             Util.getColorByAttr(
                 App.INSTANCE,
-                R.attr.colorControlHighlight,
+                AppCompatR.attr.colorControlHighlight,
                 R.color.transparent
             ), drawable
         )
@@ -139,7 +142,7 @@ fun getIntermixedColorBackground(
         itemCount,
         positionOffset,
         radius,
-        if (context.appPreferences.listItemsBackgroundIntermixed) {
+        if (context.appPreferences.listItemsBackgroundIntermixed.value) {
             colors
         } else {
             intArrayOf(colors[0])
@@ -198,12 +201,12 @@ fun launchUrl(
             host.contains("tieba.baidu.com") || host.contains("wappass.baidu.com") || host.contains(
                 "ufosdk.baidu.com"
             ) || host.contains("m.help.baidu.com")
-        if (isTiebaLink || context.appPreferences.useWebView) {
+        if (isTiebaLink || context.appPreferences.useWebView.value) {
             navigator.navigate(
                 WebViewPageDestination(url)
             )
         } else {
-            if (context.appPreferences.useCustomTabs) {
+            if (context.appPreferences.useCustomTabs.value) {
                 val intentBuilder = CustomTabsIntent.Builder()
                     .setShowTitle(true)
                     .setDefaultColorSchemeParams(

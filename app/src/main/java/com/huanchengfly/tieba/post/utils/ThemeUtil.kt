@@ -24,18 +24,21 @@ import com.github.panpf.sketch.request.DisplayResult
 import com.github.panpf.sketch.request.execute
 import com.github.panpf.sketch.resize.Scale
 import com.google.android.material.appbar.AppBarLayout
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.App.Companion.INSTANCE
 import com.huanchengfly.tieba.post.App.Companion.translucentBackground
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.activities.BaseActivity
-import com.huanchengfly.tieba.post.dataStore
-import com.huanchengfly.tieba.post.getBoolean
-import com.huanchengfly.tieba.post.getInt
-import com.huanchengfly.tieba.post.getString
+import com.huanchengfly.tieba.post.core.data.SettingsKeys.THEME_DEFAULT
+import com.huanchengfly.tieba.post.core.data.SettingsKeys.TRANSLUCENT_THEME_LIGHT
+import com.huanchengfly.tieba.post.core.data.dataStore
+import com.huanchengfly.tieba.post.core.data.getBoolean
+import com.huanchengfly.tieba.post.core.data.getInt
+import com.huanchengfly.tieba.post.core.data.getString
 import com.huanchengfly.tieba.post.interfaces.BackgroundTintable
-import com.huanchengfly.tieba.post.putBoolean
-import com.huanchengfly.tieba.post.putString
+import com.huanchengfly.tieba.post.core.data.putBoolean
+import com.huanchengfly.tieba.post.core.data.putString
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
 import com.huanchengfly.tieba.post.ui.widgets.theme.TintSwipeRefreshLayout
 import kotlinx.coroutines.launch
@@ -66,7 +69,6 @@ object ThemeUtil {
     const val THEME_TRANSLUCENT_LIGHT = "translucent_light"
     const val THEME_TRANSLUCENT_DARK = "translucent_dark"
     const val THEME_CUSTOM = "custom"
-    const val THEME_DEFAULT = "tieba"
     const val THEME_BLACK = "black"
     const val THEME_BLUE = "blue"
     const val THEME_PURPLE = "purple"
@@ -76,7 +78,8 @@ object ThemeUtil {
     const val THEME_GREY_DARK = "grey_dark"
     const val THEME_AMOLED_DARK = "amoled_dark"
 
-    const val TRANSLUCENT_THEME_LIGHT = 0
+    // THEME_DEFAULT / TRANSLUCENT_THEME_LIGHT 已迁 core:data 的 SettingsKeys（Phase 5，单一事实源）
+
     const val TRANSLUCENT_THEME_DARK = 1
 
     private val context: Context
@@ -134,7 +137,7 @@ object ThemeUtil {
     }
 
     fun isUsingDynamicTheme(): Boolean {
-        return context.appPreferences.useDynamicColorTheme
+        return context.appPreferences.useDynamicColorTheme.value
     }
 
     fun switchNightMode() {
@@ -225,9 +228,9 @@ object ThemeUtil {
 
     fun isStatusBarFontDark(): Boolean {
         val theme = getRawTheme()
-        val isToolbarPrimaryColor: Boolean = INSTANCE.appPreferences.toolbarPrimaryColor
+        val isToolbarPrimaryColor: Boolean = INSTANCE.appPreferences.toolbarPrimaryColor.value
         return if (theme == THEME_CUSTOM) {
-            INSTANCE.appPreferences.customStatusBarFontDark
+            INSTANCE.appPreferences.customStatusBarFontDark.value
         } else if (isTranslucentTheme(theme)) {
             theme.contains("dark", ignoreCase = true)
         } else if (!isToolbarPrimaryColor) {
