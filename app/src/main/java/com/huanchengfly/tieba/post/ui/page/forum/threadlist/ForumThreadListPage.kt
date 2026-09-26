@@ -26,7 +26,13 @@ import androidx.compose.material.Text
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -35,11 +41,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.protos.OriginThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.User
-import com.huanchengfly.tieba.post.api.models.protos.abstractText
-import com.huanchengfly.tieba.post.api.models.protos.frsPage.Classify
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.core.network.model.protos.OriginThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.User
+import com.huanchengfly.tieba.post.ui.common.abstractText
+import com.huanchengfly.tieba.post.core.network.model.protos.frsPage.Classify
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
 import com.huanchengfly.tieba.post.arch.BaseComposeActivity.Companion.LocalWindowSizeClass
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
@@ -83,9 +93,10 @@ private fun getRefreshIntent(
     isGood: Boolean = false,
     sortType: Int = getSortType(context, forumName),
     goodClassifyId: Int? = if (isGood) 0 else null,
+    preserveList: Boolean = false,
 ): ForumThreadListUiIntent {
-    return if (isGood) ForumThreadListUiIntent.Refresh(forumName, -1, goodClassifyId)
-    else ForumThreadListUiIntent.Refresh(forumName, sortType, null)
+    return if (isGood) ForumThreadListUiIntent.Refresh(forumName, -1, goodClassifyId, preserveList)
+    else ForumThreadListUiIntent.Refresh(forumName, sortType, null, preserveList)
 }
 
 private fun getLoadMoreIntent(
@@ -199,9 +210,11 @@ private fun ThreadList(
         }
         itemsIndexed(
             items = items,
-            key = { index, (holder) ->
+            // key 必须与位置无关:带上 index 后,任何一次刷新/替换都会让全部 key 失效,
+            // LazyColumn 的滚动锚点随之丢失(刷新后跳回顶部)。id 在 distinctById 后唯一
+            key = { _, (holder) ->
                 val (item) = holder
-                "${index}_${item.id}"
+                item.id
             },
             contentType = { _, (holder) ->
                 val (item) = holder
@@ -268,14 +281,40 @@ fun ForumThreadListPage(
     val navigator = LocalNavigator.current
     val snackbarHostState = LocalSnackbarHostState.current
 
+    // ── 浏览进度保持(生产修复)────────────────────────────────────────────
+    // 病根(Debug 追踪日志实证):从帖子页返回,saveable 恢复的
+    // 滚动索引遇上"数据晚一帧"的空列表测量,被钳回顶部(27/1065 → 0)。
+    // 对策:滚动时持续记录锚点(锚点帖 id+偏移),离开时暂存;数据落地后按锚点帖
+    // 重新定位(与索引数字无关,不受空帧影响)。
+    // 行为约定(2026-09-07 用户拍板):退主页再重进 = 新浏览归零(FirstLoad 时丢弃
+    // 锚点);导航栈内返回 = 恢复位置。
+    val browseCacheKey = ForumBrowseCache.key(forumName, isGood, if (isGood) -1 else getSortType(context, forumName))
+    var lastAnchor by remember { mutableStateOf<ForumBrowseCache.Anchor?>(null) }
+    LaunchedEffect(lazyListState) {
+        snapshotFlow { lazyListState.firstVisibleItemIndex }.collect {
+            val first = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()
+            val key = first?.key
+            if (key is Long) {
+                lastAnchor = ForumBrowseCache.Anchor(key, lazyListState.firstVisibleItemScrollOffset)
+            }
+        }
+    }
+    DisposableEffect(lazyListState) {
+        onDispose {
+            ForumBrowseCache.markPendingRestore(browseCacheKey, lastAnchor)
+        }
+    }
+
     LazyLoad(loaded = viewModel.initialized) {
+        // 全新进入 = 新的一次浏览(用户拍板):丢弃旧锚点,从头开始
+        ForumBrowseCache.consumeRestoreAnchor(browseCacheKey)
         viewModel.send(getFirstLoadIntent(context, forumName, isGood))
         viewModel.initialized = true
     }
     onGlobalEvent<ForumThreadListUiEvent.Refresh>(
         filter = { it.isGood == isGood },
     ) {
-        viewModel.send(getRefreshIntent(context, forumName, isGood, it.sortType))
+        viewModel.send(getRefreshIntent(context, forumName, isGood, it.sortType, preserveList = it.preserveList))
     }
     onGlobalEvent<ForumThreadListUiEvent.BackToTop>(
         filter = { it.isGood == isGood },
@@ -297,7 +336,9 @@ fun ForumThreadListPage(
                 ForumThreadListUiIntent.Agree(
                     it.threadId,
                     it.postId,
-                    it.hasAgree
+                    it.hasAgree,
+                    // E1:重试与首发同参,forum_id 经事件还原
+                    forumId = it.forumId,
                 )
             )
         }
@@ -340,8 +381,26 @@ fun ForumThreadListPage(
     )
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isRefreshing,
-        onRefresh = { viewModel.send(getRefreshIntent(context, forumName, isGood)) }
+        // 下拉刷新保留已加载的旧列表(新帖合并到顶部),用户当前浏览位置不被顶走
+        onRefresh = {
+            viewModel.send(getRefreshIntent(context, forumName, isGood, preserveList = true))
+        }
     )
+    // RESTORE:列表数据落地后按锚点帖恢复滚动位置,只消费一次。saveable 恢复的
+    // 索引可能已被空帧钳掉,这里按"锚点帖"重新定位,与索引无关,不受首屏数据晚到
+    // 影响。精品区不参与(重新开始语义)
+    LaunchedEffect(threadList) {
+        if (isGood || threadList.isEmpty()) return@LaunchedEffect
+        val anchor = ForumBrowseCache.consumeRestoreAnchor(browseCacheKey) ?: return@LaunchedEffect
+        // 原子读:列表与吧规头部同取一份 uiState 快照。此前分别读两个
+        // collectPartialAsState 状态,跨帧不同步时 +1 偏移会错位到错误条目
+        val state = viewModel.uiState.value
+        val listIndex = state.threadList.indexOfFirst { it.thread.get { id } == anchor.key }
+        if (listIndex >= 0) {
+            val lazyIndex = listIndex + if (state.forumRuleTitle != null) 1 else 0
+            lazyListState.scrollToItem(lazyIndex, anchor.offset)
+        }
+    }
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -410,7 +469,12 @@ fun ForumThreadListPage(
                             ForumThreadListUiIntent.Agree(
                                 it.threadId,
                                 it.firstPostId,
-                                it.agree?.hasAgree ?: 0
+                                OpRecordStore.agreeFlag(
+                                    AgreeParams.OBJ_THREAD, it.threadId,
+                                    if (it.agree?.serverEchoOp() == MyAgreeOp.AGREE) 1 else 0
+                                ),
+                                // E1:opAgree 官方必带 forum_id,列表项 ThreadInfo 已有
+                                forumId = it.forumId
                             )
                         )
                     },
@@ -419,12 +483,16 @@ fun ForumThreadListPage(
                         navigator.navigate(ForumRuleDetailPageDestination(forumId))
                     },
                     onOriginThreadClicked = {
-                        navigator.navigate(
-                            ThreadPageDestination(
-                                threadId = it.tid.toLong(),
-                                forumId = it.fid,
+                        // tid 空(原帖已删)时跳过导航:降级 0 会进一个必失败的死页
+                        val originTid = it.tid.toLongOrNull()
+                        if (originTid != null && originTid != 0L) {
+                            navigator.navigate(
+                                ThreadPageDestination(
+                                    threadId = originTid,
+                                    forumId = it.fid,
+                                )
                             )
-                        )
+                        }
                     }
                 ) { navigator.navigate(UserProfilePageDestination(it.id)) }
             }
