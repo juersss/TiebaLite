@@ -204,6 +204,9 @@ fun NavigationDrawerContent(
                             } else {
                                 onChangePosition(index)
                             }
+                            // 与 BottomNavigationItem 同口径:条目附加动作(如通知角标清零)
+                            // 在三种导航形态下必须一致,否则抽屉形态角标永不清零
+                            navigationItem.onClick?.invoke()
                         },
                         label = { Text(text = navigationItem.title(index == currentPosition)) },
                         icon = {
@@ -321,6 +324,9 @@ fun NavigationRail(
                         } else {
                             onChangePosition(index)
                         }
+                        // 与 BottomNavigationItem 同口径:条目附加动作(如通知角标清零)
+                        // 在三种导航形态下必须一致,否则侧栏形态角标永不清零
+                        navigationItem.onClick?.invoke()
                     },
                     icon = {
                         Box {

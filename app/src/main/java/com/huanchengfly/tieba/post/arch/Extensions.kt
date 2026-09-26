@@ -10,6 +10,8 @@ import androidx.compose.runtime.currentComposer
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel as androidxHiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -24,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -43,7 +46,15 @@ fun <T> Flow<T>.collectIn(
     minActiveState: Lifecycle.State = Lifecycle.State.STARTED,
     action: (T) -> Unit
 ): Job = lifecycleOwner.lifecycleScope.launch {
-    flowWithLifecycle(lifecycleOwner.lifecycle, minActiveState).collect(action)
+    // action 抛异常会终结收集且 lifecycleScope 不自恢复——此后该流的所有事件
+    // 静默丢失(如 EditProfile 的事件处理含 launcher 调用)。与 onEvent 同口径兜底
+    try {
+        flowWithLifecycle(lifecycleOwner.lifecycle, minActiveState).collect(action)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
 }
 
 @Composable
@@ -74,7 +85,13 @@ inline fun <reified Event : UiEvent> Flow<UiEvent>.onEvent(
     noinline listener: suspend (Event) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    DisposableEffect(key1 = listener, key2 = this) {
+    // ①listener lambda 身份随捕获状态变化会让 DisposableEffect 反复拆装 collector,
+    //   uiEventFlow replay=0 在间隙直接丢事件(与 R7-F3 onGlobalEvent 同机制,R8-NEW2);
+    //   注册只随 scope/flow 建立,回调经 rememberUpdatedState 取最新闭包。
+    // ②内层 launch 使 listener 逃逸 job.cancel——改为串行直调(listener 均为
+    //   toast/滚动类短操作),in-flight 回调随 dispose 一并取消。
+    val currentListener by rememberUpdatedState(listener)
+    DisposableEffect(key1 = coroutineScope, key2 = this) {
         with(coroutineScope) {
             val job = launch {
                 this@onEvent
@@ -82,8 +99,15 @@ inline fun <reified Event : UiEvent> Flow<UiEvent>.onEvent(
                     .cancellable()
                     .flowOn(Dispatchers.IO)
                     .collect {
-                        launch {
-                            listener(it)
+                        // 单个 listener 失败不得终结收集(该事件类型此后静默丢失)也不得炸组合:
+                        // try/catch 而非 runCatching——CancellationException 必须重抛,否则
+                        // dispose 时的取消会被吞掉、收集停不下来
+                        try {
+                            currentListener(it)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
             }
@@ -100,15 +124,22 @@ inline fun <reified Event : UiEvent> BaseViewModel<*, *, *, *>.onEvent(
 ) {
     val applyContext = currentComposer.applyCoroutineContext
     val coroutineScope = remember(applyContext) { CoroutineScope(applyContext) }
-    DisposableEffect(key1 = listener, key2 = this) {
+    // 同上(R8-NEW2):单次注册 + latest 闭包 + 串行直调
+    val currentListener by rememberUpdatedState(listener)
+    DisposableEffect(key1 = coroutineScope, key2 = this) {
         val job = coroutineScope.launch {
             uiEventFlow
                 .filterIsInstance<Event>()
                 .cancellable()
                 .flowOn(Dispatchers.IO)
                 .collect {
-                    coroutineScope.launch {
-                        listener(it)
+                    // 同上:listener 失败不终结收集(CancellationException 重抛)
+                    try {
+                        currentListener(it)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
         }

@@ -137,14 +137,17 @@ fun SearchThreadPage(
                     data = data,
                     lazyListState = lazyListState,
                     onItemClick = {
-                        navigator.navigate(
-                            ThreadPageDestination(
-                                threadId = it.tid.toLong()
-                            )
-                        )
+                        // 服务端字符串转 Long 必须守卫:非数字/缺失时跳过跳转,不得崩
+                        it.tid.toLongOrNull()?.let { threadId ->
+                            navigator.navigate(ThreadPageDestination(threadId = threadId))
+                        }
                     },
                     onItemUserClick = {
-                        if(!it.userId.isNullOrEmpty())navigator.navigate(UserProfilePageDestination(it.userId.toLong()))
+                        // "0" 是模型自声明的"作者未知"占位值,一并过滤
+                        val userId = it.userId?.toLongOrNull()
+                        if (userId != null && userId != 0L) {
+                            navigator.navigate(UserProfilePageDestination(userId))
+                        }
                     },
                     onItemForumClick = {
                         navigator.navigate(

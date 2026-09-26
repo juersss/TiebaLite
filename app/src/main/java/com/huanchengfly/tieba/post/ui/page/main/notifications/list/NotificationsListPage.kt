@@ -121,23 +121,27 @@ fun NotificationsListPage(
                             Column(
                                 modifier = Modifier
                                     .debounceClickable(onClick =  {
+                                        // 服务端字符串转 Long 必须守卫:缺失/非数字跳过跳转,不得崩
+                                        val threadId = info.threadId?.toLongOrNull()
+                                        val postId = info.postId?.toLongOrNull()
+                                        if (threadId == null || postId == null) return@debounceClickable
                                         if (info.isFloor == "1") {
                                             navigator.navigate(
                                                 SubPostsPageDestination(
-                                                    threadId = info.threadId!!.toLong(),
+                                                    threadId = threadId,
                                                     //postId = if (info.quotePid != null) info.quotePid.toLong() else 0,
                                                     //quotePid引用不确定，可能为postId，也可能未subPostId,导致子楼加载失败或者子回复异常
                                                     //先传0，在子楼页面获取正确的postId
                                                     postId = 0,
-                                                    subPostId = info.postId!!.toLong(),
+                                                    subPostId = postId,
                                                     loadFromSubPost = true
                                                 )
                                             )
                                         } else {
                                             navigator.navigate(
                                                 ThreadPageDestination(
-                                                    threadId = info.threadId!!.toLong(),
-                                                    postId = info.postId!!.toLong()
+                                                    threadId = threadId,
+                                                    postId = postId
                                                 )
                                             )
                                         }
@@ -149,26 +153,31 @@ fun NotificationsListPage(
                                     UserHeader(
                                         avatar = {
                                             Avatar(
-                                                data = StringUtil.getAvatarUrl(info.replyer.portrait),
+                                                data = StringUtil.getAvatarUrl(info.replyer!!.portrait),
                                                 size = Sizes.Small,
                                                 contentDescription = null
                                             )
                                         },
                                         name = {
                                             Text(
-                                                text = info.replyer.nameShow ?: info.replyer.name
+                                                text = info.replyer!!.nameShow ?: info.replyer!!.name
                                                 ?: ""
                                             )
                                         },
                                         onClick = {
-                                            navigator.navigate(UserProfilePageDestination(info.replyer.id!!.toLong()))
+                                            val replyerId = info.replyer!!.id?.toLongOrNull()
+                                            if (replyerId != null) {
+                                                navigator.navigate(UserProfilePageDestination(replyerId))
+                                            }
                                         },
                                         desc = {
                                             Text(
-                                                text = DateTimeUtils.getRelativeTimeString(
-                                                    LocalContext.current,
-                                                    info.time!!
-                                                )
+                                                text = info.time?.let {
+                                                    DateTimeUtils.getRelativeTimeString(
+                                                        LocalContext.current,
+                                                        it
+                                                    )
+                                                } ?: ""
                                             )
                                         },
                                     ) {}
@@ -193,20 +202,23 @@ fun NotificationsListPage(
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(6.dp))
                                             .debounceClickable(onClick =  {
+                                                val threadId = info.threadId?.toLongOrNull()
+                                                val postId = info.postId?.toLongOrNull()
+                                                if (threadId == null || postId == null) return@debounceClickable
                                                 if (info.isFloor == "1") {
                                                     navigator.navigate(
                                                         SubPostsPageDestination(
-                                                            threadId = info.threadId!!.toLong(),
-                                                            postId = if (info.quotePid != null) info.quotePid.toLong() else 0,
-                                                            subPostId = info.postId!!.toLong(),
+                                                            threadId = threadId,
+                                                            postId = info.quotePid?.toLongOrNull() ?: 0,
+                                                            subPostId = postId,
                                                             loadFromSubPost = true
                                                         )
                                                     )
                                                 } else {
                                                     navigator.navigate(
                                                         ThreadPageDestination(
-                                                            threadId = info.threadId!!.toLong(),
-                                                            postId = info.postId!!.toLong()
+                                                            threadId = threadId,
+                                                            postId = postId
                                                         )
                                                     )
                                                 }

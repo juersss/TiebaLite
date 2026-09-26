@@ -119,9 +119,12 @@ object QuickPreviewUtil {
         context: Context,
         link: ClipBoardThreadLink,
         lifeCycle: Lifecycle? = null,
-    ): Flow<PreviewInfo> =
-        PbPageRepository
-            .pbPage(link.threadId.toLong())
+    ): Flow<PreviewInfo> {
+        // 防御层(parseLink 已过滤):tid 转换必须发生在流构建之前判空——
+        // toLong 在建流期同步求值,异常会落在任何 catch 覆盖之外直达主线程
+        val threadId = link.threadId.toLongOrNull() ?: return flowOf()
+        return PbPageRepository
+            .pbPage(threadId)
             .map {
                 PreviewInfo(
                     clipBoardLink = link,
@@ -141,6 +144,7 @@ object QuickPreviewUtil {
                     flowWithLifecycle(lifeCycle)
                 }
             }
+    }
 
     private fun getForumPreviewInfo(
         context: Context,

@@ -14,15 +14,22 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.MsgBean
 import com.huanchengfly.tieba.post.pendingIntentFlagImmutable
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
+import dagger.hilt.android.AndroidEntryPoint
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
+import javax.inject.Inject
 
+// Phase 6.3：静态 TiebaApi 访问改字段注入（JobService 是 Service 子类，Hilt 支持 @AndroidEntryPoint）
+@AndroidEntryPoint
 class NotifyJobService : JobService() {
+    @Inject
+    lateinit var tiebaApi: ITiebaApi
+
     var notificationManager: NotificationManager? = null
     private fun createChannel(id: String, name: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -50,67 +57,75 @@ class NotifyJobService : JobService() {
                 createChannel(CHANNEL_AT, CHANNEL_AT_NAME)
             }
         }
-        TiebaApi.getInstance().msg().enqueue(object : Callback<MsgBean> {
+        tiebaApi.msg().enqueue(object : Callback<MsgBean> {
             override fun onFailure(call: Call<MsgBean>, t: Throwable) {
                 jobFinished(params, true)
             }
 
             override fun onResponse(call: Call<MsgBean>, response: Response<MsgBean>) {
-                val msgBean = response.body() ?: return
-                if (notificationManager != null) {
-                    var total = 0
-                    if ("0" != msgBean.message?.replyMe) {
-                        val replyCount = msgBean.message?.replyMe?.let { Integer.valueOf(it) }
-                        if (replyCount != null) {
-                            total += replyCount
+                // jobFinished 必须无条件执行(body 为 null/解析异常路径都不能漏):
+                // 漏了系统视任务持续运行,周期任务被超时取消,通知刷新静默停摆
+                try {
+                    val message = response.body()?.message ?: return
+                    if (notificationManager != null) {
+                        var total = 0
+                        val replyMe = message.replyMe
+                        if (replyMe != null && replyMe != "0") {
+                            // 服务端直连字符串:非数字值("99+"等)按无计数处理,不得崩
+                            val replyCount = replyMe.toIntOrNull()
+                            if (replyCount != null) {
+                                total += replyCount
+                                sendBroadcast(
+                                    Intent()
+                                        .setAction(ACTION_NEW_MESSAGE)
+                                        .putExtra("channel", CHANNEL_REPLY)
+                                        .putExtra("count", replyCount)
+                                )
+                                updateNotification(
+                                    getString(
+                                        R.string.tips_message_reply,
+                                        replyMe
+                                    ),
+                                    ID_REPLY,
+                                    CHANNEL_REPLY,
+                                    CHANNEL_REPLY_NAME,
+                                    Intent(ACTION_VIEW, Uri.parse("tblite://notifications/0"))
+                                )
+                            }
+                        }
+                        val atMe = message.atMe
+                        if (atMe != null && atMe != "0") {
+                            val atCount = atMe.toIntOrNull()
+                            if (atCount != null) {
+                                total += atCount
+                                sendBroadcast(
+                                    Intent()
+                                        .setAction(ACTION_NEW_MESSAGE)
+                                        .putExtra("channel", CHANNEL_AT)
+                                        .putExtra("count", atCount)
+                                )
+                                updateNotification(
+                                    getString(
+                                        R.string.tips_message_at,
+                                        atMe
+                                    ),
+                                    ID_AT,
+                                    CHANNEL_AT,
+                                    CHANNEL_AT_NAME,
+                                    Intent(ACTION_VIEW, Uri.parse("tblite://notifications/1"))
+                                )
+                            }
                         }
                         sendBroadcast(
                             Intent()
                                 .setAction(ACTION_NEW_MESSAGE)
-                                .putExtra("channel", CHANNEL_REPLY)
-                                .putExtra("count", replyCount)
-                        )
-                        updateNotification(
-                            getString(
-                                R.string.tips_message_reply,
-                                msgBean.message?.replyMe
-                            ),
-                            ID_REPLY,
-                            CHANNEL_REPLY,
-                            CHANNEL_REPLY_NAME,
-                            Intent(ACTION_VIEW, Uri.parse("tblite://notifications/0"))
+                                .putExtra("channel", CHANNEL_TOTAL)
+                                .putExtra("count", total)
                         )
                     }
-                    if ("0" != msgBean.message?.atMe) {
-                        val atCount = msgBean.message?.atMe?.let { Integer.valueOf(it) }
-                        if (atCount != null) {
-                            total += atCount
-                        }
-                        sendBroadcast(
-                            Intent()
-                                .setAction(ACTION_NEW_MESSAGE)
-                                .putExtra("channel", CHANNEL_AT)
-                                .putExtra("count", msgBean.message?.atMe)
-                        )
-                        updateNotification(
-                            getString(
-                                R.string.tips_message_at,
-                                msgBean.message?.atMe
-                            ),
-                            ID_AT,
-                            CHANNEL_AT,
-                            CHANNEL_AT_NAME,
-                            Intent(ACTION_VIEW, Uri.parse("tblite://notifications/1"))
-                        )
-                    }
-                    sendBroadcast(
-                        Intent()
-                            .setAction(ACTION_NEW_MESSAGE)
-                            .putExtra("channel", CHANNEL_TOTAL)
-                            .putExtra("count", total)
-                    )
+                } finally {
+                    jobFinished(params, false)
                 }
-                jobFinished(params, false)
             }
         })
         return true

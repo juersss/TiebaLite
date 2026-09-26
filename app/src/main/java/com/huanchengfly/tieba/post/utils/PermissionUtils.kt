@@ -417,11 +417,24 @@ class ShowPermissionTipInterceptor(val permissions: List<String>, val descriptio
             if (activity.isFinishing || activity.isDestroyed) {
                 return@postDelayed
             }
-            tipDialog = RequestPermissionTipDialog(
-                activity,
-                PermissionUtils.PermissionData(permissions, this.description)
-            ).apply { show() }
+            // 系统授权窗口弹出后 Activity 可能已转入 pause,此时 show() 有抛
+            // BadTokenException 的先例;提示条是锦上添花,不能反过来炸掉权限流程
+            runCatching {
+                tipDialog = RequestPermissionTipDialog(
+                    activity,
+                    PermissionUtils.PermissionData(permissions, this.description)
+                ).apply { show() }
+            }
         }, 300)
+
+        // ★ 必须显式派发请求,否则会被本拦截器吞掉、系统授权窗口永不出现。
+        // 该接口的默认实现本就是"onRequestPermissionStart → dispatchPermissionRequest",
+        // 覆写前者却不调用后者 = 把请求拦死。这是长时间存在的功能性缺陷:
+        // 现象为提示条常驻(只有 onRequestPermissionStart 被调用、onRequestPermissionEnd
+        // 永不到达),系统弹窗从未出现,POST_NOTIFICATIONS 长期 granted=false
+        // 且不带 USER_SET 标记 —— 即用户从未看到过系统授权窗口,权限请求只起"卡住"作用。
+        // 2026-09-12 在 MuMu 实机定位(逐字节核对 OnPermissionInterceptor 默认实现)。
+        dispatchPermissionRequest(activity, allPermissions, factory, description, callback)
     }
 
     override fun onRequestPermissionEnd(

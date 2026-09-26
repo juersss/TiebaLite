@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.core.content.ContextCompat
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.api.TiebaApi
 import com.huanchengfly.tieba.post.api.retrofit.doIfFailure
@@ -50,7 +51,7 @@ object TiebaUtil {
 
     fun initAutoSign(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val autoSign = context.appPreferences.autoSign
+        val autoSign = context.appPreferences.autoSign.value
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             0,
@@ -58,21 +59,27 @@ object TiebaUtil {
             pendingIntentFlagMutable()
         )
         if (autoSign) {
-            val autoSignTimeStr = context.appPreferences.autoSignTime!!
+            val autoSignTimeStr = context.appPreferences.autoSignTime.value!!
             val time = autoSignTimeStr.split(":").toTypedArray()
             val hour = time[0].toInt()
             val minute = time[1].toInt()
             val calendar = Calendar.getInstance()
             calendar[Calendar.HOUR_OF_DAY] = hour
             calendar[Calendar.MINUTE] = minute
-            if (calendar.timeInMillis >= System.currentTimeMillis()) {
-                alarmManager.setRepeating(
-                    AlarmManager.RTC_WAKEUP,
-                    calendar.timeInMillis,
-                    AlarmManager.INTERVAL_DAY,
-                    pendingIntent
-                )
+            calendar[Calendar.SECOND] = 0
+            calendar[Calendar.MILLISECOND] = 0
+            if (calendar.timeInMillis < System.currentTimeMillis()) {
+                // 今天设定时刻已过:排明天。此前什么都不挂——用户总在设定时刻之后打开 App
+                // 时,闹钟永远排不上,自动签到静默失效(与 BootCompleteSignReceiver 的
+                // "+1 天补挂"口径对齐)
+                calendar.add(Calendar.DAY_OF_MONTH, 1)
             }
+            alarmManager.setRepeating(
+                AlarmManager.RTC_WAKEUP,
+                calendar.timeInMillis,
+                AlarmManager.INTERVAL_DAY,
+                pendingIntent
+            )
         } else {
             alarmManager.cancel(pendingIntent)
         }
@@ -80,7 +87,7 @@ object TiebaUtil {
 
     @JvmStatic
     fun startSign(context: Context) {
-        context.appPreferences.signDay = Calendar.getInstance()[Calendar.DAY_OF_MONTH]
+        context.appPreferences.signDay.set(Calendar.getInstance()[Calendar.DAY_OF_MONTH])
 //        OKSignService.enqueueWork(
 //            context,
 //            Intent()
@@ -122,9 +129,15 @@ object TiebaUtil {
             .checkReportPostAsync(postId)
             .doIfSuccess {
                 dialog.dismiss()
-                navigator.navigate(
-                    WebViewPageDestination(it.data.url)
-                )
+                val url = it.data?.url
+                if (url.isNullOrEmpty()) {
+                    // 服务端缺 data/url 键:没有落地页可跳,按加载失败提示
+                    context.toastShort(R.string.toast_load_failed)
+                } else {
+                    navigator.navigate(
+                        WebViewPageDestination(url)
+                    )
+                }
             }
             .doIfFailure {
                 dialog.dismiss()

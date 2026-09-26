@@ -1,5 +1,6 @@
 package com.huanchengfly.tieba.post
 
+import com.huanchengfly.tieba.post.api.params.ClientUtils
 import android.annotation.SuppressLint
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
@@ -95,7 +96,6 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.DialogPositiveButton
 import com.huanchengfly.tieba.post.ui.widgets.compose.Sizes
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberDialogState
 import com.huanchengfly.tieba.post.utils.AccountUtil
-import com.huanchengfly.tieba.post.utils.ClientUtils
 import com.huanchengfly.tieba.post.utils.JobServiceUtil
 import com.huanchengfly.tieba.post.utils.PermissionUtils
 import com.huanchengfly.tieba.post.utils.PickMediasRequest
@@ -109,6 +109,7 @@ import com.huanchengfly.tieba.post.utils.newIntentFilter
 import com.huanchengfly.tieba.post.utils.registerPickMediasLauncher
 import com.huanchengfly.tieba.post.utils.requestIgnoreBatteryOptimizations
 import com.huanchengfly.tieba.post.utils.requestPermission
+import com.huanchengfly.tieba.post.utils.shouldUsePhotoPicker
 import com.ramcosta.composedestinations.DestinationsNavHost
 import com.ramcosta.composedestinations.animations.defaults.RootNavGraphDefaultAnimations
 import com.ramcosta.composedestinations.animations.rememberAnimatedNavHostEngine
@@ -169,6 +170,28 @@ class MainActivityV2 : BaseComposeActivity() {
             emitGlobalEvent(GlobalEvent.SelectedImages(it.id, it.uris))
         }
 
+    /** 选图统一入口(外部审查-3):系统 Photo Picker 经 URI 授权工作,无需运行时权限;
+     * 回退 Matisse 的链路在此补齐媒体读取权限申请,避免首次安装未授权时空相册/访问失败 */
+    private fun launchPickMedias(request: PickMediasRequest) {
+        if (shouldUsePhotoPicker()) {
+            pickMediasLauncher.launch(request)
+            return
+        }
+        requestPermission {
+            unchecked = true
+            permissions = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                listOf(PermissionUtils.READ_EXTERNAL_STORAGE, PermissionUtils.WRITE_EXTERNAL_STORAGE)
+            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                listOf(PermissionUtils.READ_EXTERNAL_STORAGE)
+            } else {
+                listOf(PermissionUtils.READ_MEDIA_IMAGES)
+            }
+            description = getString(R.string.tip_permission_storage)
+            onGranted = { pickMediasLauncher.launch(request) }
+            onDenied = { toastShort(R.string.toast_no_permission_insert_photo) }
+        }
+    }
+
     private val mLaunchActivityForResultLauncher = registerForActivityResult(
         LaunchActivityForResult()
     ) {
@@ -203,6 +226,9 @@ class MainActivityV2 : BaseComposeActivity() {
 
     private var direction: Direction? = null
     private var waitingNavCollectorToNavigate = AtomicBoolean(false)
+
+    /** 冷启动缓冲的 tblite:// 深链:导航控制器就绪前不能丢,就绪后重放 */
+    private var pendingDeepLinkIntent: Intent? = null
     private var myNavController: NavHostController? = null
         set(value) {
             field = value
@@ -216,6 +242,19 @@ class MainActivityV2 : BaseComposeActivity() {
                                 waitingNavCollectorToNavigate.set(false)
                                 direction = null
                             }
+                        }
+                }
+            }
+            // 深链走同一缓冲:此前只在 onNewIntent 调 handleDeepLink,冷启动
+            // (通知/桌面快捷方式/外部链接拉起)时控制器尚不存在,深链被静默丢弃
+            if (value != null && pendingDeepLinkIntent != null) {
+                val intent = pendingDeepLinkIntent
+                pendingDeepLinkIntent = null
+                launch {
+                    value.currentDestinationFlow
+                        .take(1)
+                        .collect {
+                            intent?.let { value.handleDeepLink(it) }
                         }
                 }
             }
@@ -267,7 +306,13 @@ class MainActivityV2 : BaseComposeActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (!checkIntent(intent)) {
-            myNavController?.handleDeepLink(intent)
+            val controller = myNavController
+            if (controller != null) {
+                controller.handleDeepLink(intent)
+            } else if (intent.data?.scheme == "tblite") {
+                // 控制器未就绪(如重建窗口期):进缓冲,等 setter 重放
+                pendingDeepLinkIntent = intent
+            }
         }
     }
 
@@ -322,6 +367,12 @@ class MainActivityV2 : BaseComposeActivity() {
         }
     }
 
+    override fun onStop() {
+        // 与 onStart 的 registerReceiver 配对:不注销会钉住 Activity 且重入时重复注册
+        runCatching { unregisterReceiver(newMessageReceiver) }
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -330,7 +381,14 @@ class MainActivityV2 : BaseComposeActivity() {
         launch {
             ClientUtils.setActiveTimestamp()
         }
-        intent?.let { checkIntent(it) }
+        intent?.let {
+            // checkIntent 必须无条件先调(它负责百度系/官网深链的 navigate,有副作用);
+            // 只对"checkIntent 不处理 且 是 tblite 深链"的 intent 进缓冲。
+            // 若把 scheme 判断放在 && 左侧,冷启动的百度系深链会被短路跳过 checkIntent 静默丢弃
+            if (!checkIntent(it) && it.data?.scheme == "tblite") {
+                pendingDeepLinkIntent = it
+            }
+        }
         launch {
             delay(100)
             requestNotificationPermission()
@@ -452,19 +510,17 @@ class MainActivityV2 : BaseComposeActivity() {
                 DialogNegativeButton(
                     text = stringResource(id = R.string.button_dont_remind_again),
                     onClick = {
-                        appPreferences.ignoreBatteryOptimizationsDialog = true
+                        appPreferences.ignoreBatteryOptimizationsDialog.set(true)
                     }
                 )
             },
         )
         LaunchedEffect(Unit) {
-            if (appPreferences.autoSign && !isIgnoringBatteryOptimizations() && !appPreferences.ignoreBatteryOptimizationsDialog) {
+            if (appPreferences.autoSign.value && !isIgnoringBatteryOptimizations() && !appPreferences.ignoreBatteryOptimizationsDialog.value) {
                 okSignAlertDialogState.show()
             }
             onGlobalEvent<GlobalEvent.StartSelectImages> {
-                pickMediasLauncher.launch(
-                    PickMediasRequest(it.id, it.maxCount, it.mediaType)
-                )
+                launchPickMedias(PickMediasRequest(it.id, it.maxCount, it.mediaType))
             }
             onGlobalEvent<GlobalEvent.StartActivityForResult> {
                 mLaunchActivityForResultLauncher.launch(
@@ -481,6 +537,7 @@ class MainActivityV2 : BaseComposeActivity() {
                 val engine = TiebaNavHostDefaults.rememberNavHostEngine()
                 val navigator = TiebaNavHostDefaults.rememberBottomSheetNavigator()
                 val currentDestination by navController.currentDestinationAsState()
+
 
                 navController.navigatorProvider += navigator
 

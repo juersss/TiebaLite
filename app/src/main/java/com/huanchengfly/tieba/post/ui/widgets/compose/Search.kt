@@ -61,7 +61,7 @@ import com.huanchengfly.tieba.post.ui.common.windowsizeclass.WindowWidthSizeClas
 import com.huanchengfly.tieba.post.utils.DateTimeUtils
 import com.huanchengfly.tieba.post.utils.StringUtil
 import com.huanchengfly.tieba.post.utils.StringUtil.buildAnnotatedStringWithUser
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -163,12 +163,27 @@ fun SearchThreadList(
     searchKeyword: String? = null,
     header: LazyListScope.() -> Unit = {},
 ) {
+    // key 必须给:无 key 时 LazyList 以 index 为 item 身份,数据整体替换(刷新/换词)
+    // 后同 index 的 composition 被复用,卡片内的 remember/订阅闭包仍指向旧帖子。
+    // 但不能用裸 tid:该列表是帖子级结果(主帖/热评/楼中楼混排),同帖多行 tid 相同。
+    // 且三元组也可能撞——翻页窗口内同帖重回结果集、Refresh/LoadMore 拼接零去重——
+    // 重复 key 会让 LazyList 抛 IllegalArgumentException 崩掉搜索页:组内自增去重。
+    // (remember 在组合上下文求值,LazyListScope lambda 不是组合上下文,须放这里)
+    val itemKeys = remember(data) {
+        val seen = HashMap<String, Int>()
+        data.map { item ->
+            val base = "${item.tid}_${item.pid}_${item.cid}"
+            val n = seen[base] ?: 0
+            seen[base] = n + 1
+            if (n == 0) base else "$base#$n"
+        }
+    }
     MyLazyColumn(
         state = lazyListState,
         modifier = modifier
     ) {
         header()
-        itemsIndexed(data) { index, item ->
+        itemsIndexed(data, key = { index, _ -> itemKeys[index] }) { index, item ->
             if (index > 0) {
                 VerticalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -254,28 +269,28 @@ fun SearchThreadItem(
             if (item.mainPost != null) {
                 if (item.postInfo != null) {
                     QuotePostCard(
-                        quotePostInfo = item.postInfo,
-                        mainPost = item.mainPost,
+                        quotePostInfo = item.postInfo!!,
+                        mainPost = item.mainPost!!,
                         onMainPostClick = onMainPostClick,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(6.dp))
                             .background(ExtendedTheme.colors.floorCard)
                             .clickable {
-                                onQuotePostClick(item.postInfo)
+                                onQuotePostClick(item.postInfo!!)
                             },
                         medias = item.media.toImmutableList(),
                         keyword = searchKeyword
                     )
                 } else {
                     MainPostCard(
-                        mainPost = item.mainPost,
+                        mainPost = item.mainPost!!,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(6.dp))
                             .background(ExtendedTheme.colors.floorCard)
                             .clickable {
-                                onMainPostClick(item.mainPost)
+                                onMainPostClick(item.mainPost!!)
                             },
                         medias = item.media.toImmutableList(),
                         keyword = searchKeyword
@@ -302,6 +317,8 @@ fun SearchThreadItem(
                 )
 
                 ThreadAgreeBtn(
+                    // 搜索结果卡片是静态展示(无点赞交互),键传 tid 仅保持签名一致
+                    threadId = item.tid.toLongOrNull() ?: 0L,
                     hasAgree = false,
                     agreeNum = item.likeNum,
                     onClick = {},
@@ -334,7 +351,7 @@ fun SearchMedia(
     }
     val hasPhoto = remember(picCount) { picCount > 0 }
     val isSinglePhoto = remember(picCount) { picCount == 1 }
-    val hideMedia = context.appPreferences.hideMedia
+    val hideMedia = context.appPreferences.hideMedia.value
 
     val windowWidthSizeClass = BaseComposeActivity.LocalWindowSizeClass.current.widthSizeClass
     val singleMediaFraction = remember(windowWidthSizeClass) {

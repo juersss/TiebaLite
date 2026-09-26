@@ -44,7 +44,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun NotificationsPage(
     navigator: DestinationsNavigator,
-    initialTab: Int = 0,
+    // String 类型 + 自行解析:该页唯一入口是深链(MainActivityV2 exported),Int 参数走
+    // NavType.IntType.parseValue 对非数字串直接 NumberFormatException 崩;越界值还要收敛
+    initialTab: String = "0",
 ) {
     val pages = listOf<Pair<String, (@Composable () -> Unit)>>(
         stringResource(id = R.string.title_reply_me) to @Composable {
@@ -55,7 +57,7 @@ fun NotificationsPage(
         }
     )
     val pagerState = rememberPagerState(
-        initialPage = initialTab,
+        initialPage = initialTab.toIntOrNull()?.coerceIn(0, pages.lastIndex) ?: 0,
     ) { pages.size }
     val coroutineScope = rememberCoroutineScope()
     ProvideNavigator(navigator = navigator) {

@@ -80,7 +80,11 @@ object ClipBoardLinkDetector : Application.ActivityLifecycleCallbacks {
         val path = uri.path
         return when {
             path.isNullOrEmpty() -> null
-            path.startsWith("/p/") -> ClipBoardThreadLink(url, path.substring(3))
+            // tid 只接受纯数字:预览流按 Long 请求,非数字串会在建流期抛
+            // NumberFormatException(在 catch 覆盖之外)落主线程
+            path.startsWith("/p/") -> path.substring(3)
+                .takeIf { it.toLongOrNull() != null }
+                ?.let { ClipBoardThreadLink(url, it) }
             path.equals("/f", ignoreCase = true) || path.equals("/mo/q/m", ignoreCase = true) -> {
                 val kw = uri.getQueryParameter("kw")
                 val word = uri.getQueryParameter("word")
@@ -89,7 +93,7 @@ object ClipBoardLinkDetector : Application.ActivityLifecycleCallbacks {
                 when {
                     !kw.isNullOrEmpty() -> ClipBoardForumLink(url, kw)
                     !word.isNullOrEmpty() -> ClipBoardForumLink(url, word)
-                    !kz.isNullOrEmpty() -> ClipBoardThreadLink(url, kz)
+                    !kz.isNullOrEmpty() && kz.toLongOrNull() != null -> ClipBoardThreadLink(url, kz)
                     else -> null
                 }
             }
@@ -106,9 +110,12 @@ object ClipBoardLinkDetector : Application.ActivityLifecycleCallbacks {
             mutablePreviewInfoStateFlow.value = null
             return
         }
-        updateClipBoardHashCode()
         val clipBoardText = clipBoard
         if (clipBoardText != null) {
+            // hash 必须在读到非空剪贴板之后再提交:提交在读取之前时,10 秒节流窗内
+            // 读到 null 会把本轮消费成"置空",且 hash 已相等导致这条新链接此后
+            // 永不再被解析(节流命中时不提交、不清预览,留给下次生命周期回调重试)
+            updateClipBoardHashCode()
             @RegExp val regex =
                 "((http|https)://)(([a-zA-Z0-9._-]+\\.[a-zA-Z]{2,6})|([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}))(:[0-9]{1,4})*(/[a-zA-Z0-9&%_./-~-]*)?"
             val pattern = Pattern.compile(regex)
@@ -132,8 +139,6 @@ object ClipBoardLinkDetector : Application.ActivityLifecycleCallbacks {
             } else {
                 mutablePreviewInfoStateFlow.value = null
             }
-        } else {
-            mutablePreviewInfoStateFlow.value = null
         }
     }
 

@@ -67,11 +67,10 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.Sizes
 import com.huanchengfly.tieba.post.ui.widgets.compose.Switch
 import com.huanchengfly.tieba.post.ui.widgets.compose.VerticalDivider
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberDialogState
-import com.huanchengfly.tieba.post.utils.CuidUtils
+import com.huanchengfly.tieba.post.api.params.CuidUtils
 import com.huanchengfly.tieba.post.utils.StringUtil
 import com.huanchengfly.tieba.post.utils.ThemeUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
-
+import com.huanchengfly.tieba.post.core.data.appPreferences
 @Composable
 private fun StatCardPlaceholder(modifier: Modifier = Modifier) {
     Row(
@@ -261,7 +260,7 @@ fun UserPage(
         dialogState = switchToNightDialogState,
         onConfirm = {},
         onCancel = {
-            context.appPreferences.followSystemNight = false
+            context.appPreferences.followSystemNight.set(false)
             ThemeUtil.switchNightMode()
         },
         confirmText = stringResource(id = R.string.btn_keep_following),
@@ -295,7 +294,10 @@ fun UserPage(
                         modifier = Modifier
                             .padding(top = 8.dp)
                             .clickable {
-                                navigator.navigate(UserProfilePageDestination(account!!.uid.toLong()))
+                                // uid 字符串转 Long 守卫:非数字/缺失时跳过跳转,不得崩
+                                account!!.uid.toLongOrNull()?.let { uid ->
+                                    navigator.navigate(UserProfilePageDestination(uid))
+                                }
                             }
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                         userName = account!!.nameShow ?: account!!.name,
@@ -366,7 +368,7 @@ fun UserPage(
                     Switch(
                         checked = ThemeUtil.isNightMode(ThemeUtil.themeState.value),
                         onCheckedChange = {
-                            if (context.appPreferences.followSystemNight) {
+                            if (context.appPreferences.followSystemNight.value) {
                                 switchToNightDialogState.show()
                             } else {
                                 ThemeUtil.switchNightMode()

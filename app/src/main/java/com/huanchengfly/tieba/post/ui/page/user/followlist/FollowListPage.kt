@@ -76,7 +76,7 @@ fun FollowListPage(
     navigator: DestinationsNavigator,
     viewModel: FollowListViewModel = pageViewModel(),
 ) {
-    val showActions = (uid == 0L || uid == AccountUtil.LocalAccount.current?.uid?.toLong())
+    val showActions = (uid == 0L || uid == AccountUtil.LocalAccount.current?.uid?.toLongOrNull())
 
     fun refresh() {
         if (showActions) {

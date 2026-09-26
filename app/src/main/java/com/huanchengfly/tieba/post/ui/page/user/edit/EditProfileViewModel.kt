@@ -2,10 +2,9 @@ package com.huanchengfly.tieba.post.ui.page.user.edit
 
 import androidx.compose.runtime.Stable
 import com.huanchengfly.tieba.post.App
-import com.huanchengfly.tieba.post.api.TiebaApi
 import com.huanchengfly.tieba.post.utils.DatabaseUtil
 import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
-import com.huanchengfly.tieba.post.api.models.protos.profile.ProfileResponse
+import com.huanchengfly.tieba.post.core.network.model.protos.profile.ProfileResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorCode
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
@@ -32,12 +31,14 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class EditProfileViewModel @Inject constructor() :
+class EditProfileViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<EditProfileIntent, EditProfilePartialChange, EditProfileState, EditProfileEvent>() {
     override fun createInitialState(): EditProfileState = EditProfileState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<EditProfileIntent, EditProfilePartialChange, EditProfileState> =
-        EditProfilePartialChangeProducer(TiebaApi.getInstance())
+        EditProfilePartialChangeProducer(tiebaApi)
 
     class EditProfilePartialChangeProducer(
         private val tiebaApi: ITiebaApi
@@ -62,33 +63,40 @@ class EditProfileViewModel @Inject constructor() :
             return if (account == null) {
                 flowOf<EditProfilePartialChange.Init>(EditProfilePartialChange.Init.Fail("not logged in!"))
             } else {
-                TiebaApi.getInstance()
-                    .userProfileFlow(account.uid.toLong())
-                    .map<ProfileResponse, EditProfilePartialChange.Init> { profile ->
-                        val user = checkNotNull(profile.data_?.user)
-                        account.apply {
-                            nameShow = user.nameShow
-                            portrait = user.portrait
-                            intro = user.intro
-                            sex = user.sex.toString()
-                            fansNum = user.fans_num.toString()
-                            postNum = user.post_num.toString()
-                            threadNum = user.thread_num.toString()
-                            concernNum = user.concern_num.toString()
-                            tbAge = user.tb_age
-                            age = user.birthday_info?.age?.toString()
-                            birthdayShowStatus =
-                                user.birthday_info?.birthday_show_status?.toString()
-                            birthdayTime = user.birthday_info?.birthday_time?.toString()
-                            constellation = user.birthday_info?.constellation
-                            tiebaUid = user.tieba_uid
-                            loadSuccess = true
+                // toLong 必须在 flow 链组装前完成守卫:参数求值期抛出的异常在 .catch 之外,
+                // 会沿管线进 viewModelScope 崩进程
+                val uid = account.uid.toLongOrNull()
+                if (uid == null) {
+                    flowOf<EditProfilePartialChange.Init>(EditProfilePartialChange.Init.Fail("uid 解析失败"))
+                } else {
+                    tiebaApi
+                        .userProfileFlow(uid)
+                        .map<ProfileResponse, EditProfilePartialChange.Init> { profile ->
+                            val user = checkNotNull(profile.data_?.user)
+                            account.apply {
+                                nameShow = user.nameShow
+                                portrait = user.portrait
+                                intro = user.intro
+                                sex = user.sex.toString()
+                                fansNum = user.fans_num.toString()
+                                postNum = user.post_num.toString()
+                                threadNum = user.thread_num.toString()
+                                concernNum = user.concern_num.toString()
+                                tbAge = user.tb_age
+                                age = user.birthday_info?.age?.toString()
+                                birthdayShowStatus =
+                                    user.birthday_info?.birthday_show_status?.toString()
+                                birthdayTime = user.birthday_info?.birthday_time?.toString()
+                                constellation = user.birthday_info?.constellation
+                                tiebaUid = user.tieba_uid
+                                loadSuccess = true
+                            }
+                            DatabaseUtil.updateAccount(account)
+                            EditProfilePartialChange.Init.Success(account = account)
                         }
-                        DatabaseUtil.updateAccount(account)
-                        EditProfilePartialChange.Init.Success(account = account)
-                    }
-                    .onStart { emit(EditProfilePartialChange.Init.Loading) }
-                    .catch { emit(EditProfilePartialChange.Init.Fail(it.getErrorMessage())) }
+                        .onStart { emit(EditProfilePartialChange.Init.Loading) }
+                        .catch { emit(EditProfilePartialChange.Init.Fail(it.getErrorMessage())) }
+                }
             }
         }
 

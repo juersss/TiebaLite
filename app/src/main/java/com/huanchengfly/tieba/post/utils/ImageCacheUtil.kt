@@ -63,8 +63,10 @@ object ImageCacheUtil {
     fun clearImageAllCache(context: Context) {
         clearImageDiskCache(context)
         clearImageMemoryCache(context)
+        // externalCacheDir 在存储不可用/权限拒绝时为 null,"null.toString()" 拼出的假路径
+        // 无害但 externalCacheDir 直接 NPE 会崩——回落内部缓存目录
         val imageExternalCacheDir =
-            context.externalCacheDir.toString() + File.separator + DEFAULT_DISK_CACHE_DIR
+            (context.externalCacheDir ?: context.cacheDir).toString() + File.separator + DEFAULT_DISK_CACHE_DIR
         deleteFolderFile(imageExternalCacheDir, false)
         deleteFolderFile(context.cacheDir.toString() + File.separator + ".shareTemp", false)
     }
@@ -76,9 +78,11 @@ object ImageCacheUtil {
      */
     fun getCacheSize(context: Context): String {
         try {
+            // 与 clearImageAllCache 同一基目录:测量与清除口径不一致会出现
+            // "清完缓存大小不降"的展示错乱
             val glideCacheSize = getFolderSize(
                 File(
-                    context.cacheDir,
+                    context.externalCacheDir ?: context.cacheDir,
                     DEFAULT_DISK_CACHE_DIR
                 )
             ).toDouble()
