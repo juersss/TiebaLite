@@ -4,7 +4,6 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.util.Log
 import android.view.View
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -94,7 +93,7 @@ import com.huanchengfly.tieba.post.arch.onGlobalEvent
 import com.huanchengfly.tieba.post.arch.pageViewModel
 import com.huanchengfly.tieba.post.models.database.Draft
 import com.huanchengfly.tieba.post.pxToDpFloat
-import com.huanchengfly.tieba.post.toMD5
+import com.huanchengfly.tieba.post.core.common.toMD5
 import com.huanchengfly.tieba.post.toastShort
 import com.huanchengfly.tieba.post.ui.common.theme.compose.ExtendedTheme
 import com.huanchengfly.tieba.post.ui.page.destinations.ReplyPageDestination
@@ -118,7 +117,7 @@ import com.huanchengfly.tieba.post.utils.Emoticon
 import com.huanchengfly.tieba.post.utils.EmoticonManager
 import com.huanchengfly.tieba.post.utils.PickMediasRequest
 import com.huanchengfly.tieba.post.utils.StringUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.hideKeyboard
 import com.huanchengfly.tieba.post.utils.showKeyboard
 import com.ramcosta.composedestinations.annotation.Destination
@@ -157,6 +156,13 @@ fun ReplyDialog(
         dialogState = state,
         imePadding = false,
     ) {
+        // ViewModel 挂在所在导航页上、跨多次打开存活;对话框内容每次打开都全新
+        // 组合(关闭即离开组合),在这里发清空意图,让每轮打开从干净状态开始
+        // (上一轮选的图/成功标志不得带进下一轮,详见 ClearContent 注释)
+        val viewModel = pageViewModel<ReplyViewModel>()
+        LaunchedEffect(Unit) {
+            viewModel.send(ReplyUiIntent.ClearContent)
+        }
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
@@ -164,7 +170,7 @@ fun ReplyDialog(
             elevation = 0.dp,
         ) {
             ReplyPageContent(
-                viewModel = pageViewModel(),
+                viewModel = viewModel,
                 onBack = { dismiss() },
                 forumId = args.forumId,
                 forumName = args.forumName,
@@ -249,6 +255,18 @@ internal fun ReplyPageContent(
         return editTextView?.text?.toString().orEmpty()
     }
 
+    // 回复正文统一构建:楼中楼回复带"回复 #(reply,...) :"前缀。
+    // 无图发送与"上传成功后发送"(见 UploadSuccess 分支)必须走同一份逻辑,
+    // 否则带图回复楼中楼会丢前缀(09-06 接通楼中楼发图时发现原两处不一致)。
+    // 被引用用户名/头像缺失(作者已注销等,见 hint 同款判定)时退化为纯正文:
+    // 前缀里写出字面 "null" 会原样发给所有可见者;回复指向仍由 replyUserId 参数承载
+    fun buildReplyBody(): String =
+        if (subPostId == null || subPostId == 0L || replyUserName == null || replyUserPortrait == null) {
+            getText()
+        } else {
+            "回复 #(reply, ${replyUserPortrait}, ${replyUserName}) :${getText()}"
+        }
+
     fun setText(text: String) {
         if (editTextView != null) {
             editTextView?.setText(StringUtil.getEmoticonContent(editTextView!!, text))
@@ -279,7 +297,6 @@ internal fun ReplyPageContent(
             .sample(500)
             .distinctUntilChanged()
             .collect {
-                Log.i("ReplyPage", "collect: $it")
                 if (!replySuccess) {
                     DatabaseUtil.saveDraft(hash, it)
                 }
@@ -287,22 +304,19 @@ internal fun ReplyPageContent(
     }
     val textLength by remember { derivedStateOf { curText.length } }
     val isTextEmpty by remember { derivedStateOf { curText.isEmpty() } }
-    var topTitle = when (replyType) {
-        ReplyType.TOPIC_THREAD -> context.getString(R.string.title_thread)
-        else -> context.getString(R.string.title_reply)
+    val topTitle = when (replyType) {
+        ReplyType.TOPIC_THREAD -> stringResource(R.string.title_thread)
+        else -> stringResource(R.string.title_reply)
     }
-    LaunchedEffect(replyType) {
-        topTitle = when (replyType) {
-            ReplyType.TOPIC_THREAD -> context.getString(R.string.title_thread)
-            else -> context.getString(R.string.title_reply)
-        }
-    }
+    // hint 的三串标题在组合期取出(coroutine 内不可调用 @Composable 的 stringResource)
+    val hintThread = stringResource(R.string.tip_thread_content)
+    val hintReplyUser = stringResource(R.string.hint_reply, replyUserName.orEmpty())
+    val hintReply = stringResource(R.string.tip_reply)
     LaunchedEffect(replyType, editTextView) {
         editTextView?.hint = when {
-            replyType == ReplyType.TOPIC_THREAD -> context.getString(R.string.tip_thread_content)
-            subPostId != null && subPostId != 0L && replyUserName != null ->
-                context.getString(R.string.hint_reply, replyUserName)
-            else -> context.getString(R.string.tip_reply)
+            replyType == ReplyType.TOPIC_THREAD -> hintThread
+            subPostId != null && subPostId != 0L && replyUserName != null -> hintReplyUser
+            else -> hintReply
         }
     }
     viewModel.onEvent<ReplyUiEvent.ReplySuccess> {
@@ -327,7 +341,7 @@ internal fun ReplyPageContent(
                 }
             viewModel.send(
                 ReplyUiIntent.Send(
-                    "${getText()}\n$imageContent",
+                    "${buildReplyBody()}\n$imageContent",
                     forumId,
                     forumName,
                     threadId,
@@ -402,7 +416,7 @@ internal fun ReplyPageContent(
     }
     val imeAnimationEnd by remember { derivedStateOf { imeCurrentHeight == imeAnimationTargetHeight } }
     val imeVisibleHeightPx by produceState(
-        initialValue = remember { context.appPreferences.imeHeight },
+        initialValue = remember { context.appPreferences.imeHeight.value },
         imeAnimationTargetInset,
         density
     ) {
@@ -410,7 +424,7 @@ internal fun ReplyPageContent(
             .filter { it > 0 }
             .distinctUntilChanged()
             .collect {
-                context.appPreferences.imeHeight = it
+                context.appPreferences.imeHeight.set(it)
                 value = it
             }
     }
@@ -602,7 +616,11 @@ internal fun ReplyPageContent(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            if (postId == null || postId == 0L) {
+            // 图片按钮场景门控(§七.3 二期接入,09-06):原本仅"发表新楼层/发主题"(postId 空)可见;
+            // 楼中楼回复(subPostId 非空)同样放行——上传/发送链路本就支持 subPostId+图片,只差此处入口。
+            // "回复到某楼层"(postId 非空且无 subPostId)维持隐藏(上游原行为,未获放开指令)。
+            // 注意:百度服务端是否接受楼中楼带图未经真机验证,失败表现为发送报错,不影响其他功能。
+            if (postId == null || postId == 0L || (subPostId != null && subPostId != 0L)) {
                 IconButton(
                     onClick = { switchToPanel(IMAGE) },
                     modifier = Modifier.size(24.dp)
@@ -649,16 +667,11 @@ internal fun ReplyPageContent(
                 )
             } else {
                 IconButton(
-                    onClick = {
-                        val replyContent = if (subPostId == null || subPostId == 0L) {
-                            getText()
-                        } else {
-                            "回复 #(reply, ${replyUserPortrait}, ${replyUserName}) :${getText()}"
-                        }
-                        if (selectedImageList.isEmpty()) {
-                            viewModel.send(
-                                ReplyUiIntent.Send(
-                                    content = replyContent,
+                onClick = {
+                    if (selectedImageList.isEmpty()) {
+                        viewModel.send(
+                            ReplyUiIntent.Send(
+                                content = buildReplyBody(),
                                     forumId = forumId,
                                     forumName = forumName,
                                     threadId = threadId,
@@ -802,7 +815,7 @@ internal fun ReplyPageContent(
     }
 
     LaunchedEffect(Unit) {
-        if (context.appPreferences.postOrReplyWarning) {
+        if (context.appPreferences.postOrReplyWarning.value) {
             warningDialogState.show()
         }
     }
