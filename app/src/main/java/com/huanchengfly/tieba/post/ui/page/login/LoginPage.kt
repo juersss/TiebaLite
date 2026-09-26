@@ -1,6 +1,8 @@
 package com.huanchengfly.tieba.post.ui.page.login
 
+import com.huanchengfly.tieba.post.api.params.ClientUtils
 import android.annotation.SuppressLint
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.compose.animation.core.animateFloatAsState
@@ -56,7 +58,6 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.rememberSaveableWebViewSta
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberWebViewNavigator
 import com.huanchengfly.tieba.post.utils.AccountUtil
 import com.huanchengfly.tieba.post.utils.AccountUtil.parseCookie
-import com.huanchengfly.tieba.post.utils.ClientUtils
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.CoroutineScope
@@ -222,7 +223,14 @@ fun LoginPage(
                         snackbarHostState
                     )
                 },
-                chromeClient = remember { MyWebChromeClient(context, coroutineScope) }
+                chromeClient = remember { MyWebChromeClient(context, coroutineScope) },
+                onDispose = {
+                    // 外部审查-1.5(与 WebViewPage 同口径):登录页反复进出必须销毁
+                    // WebView 实例,防 native 层资源累积
+                    it.stopLoading()
+                    (it.parent as? ViewGroup)?.removeView(it)
+                    it.destroy()
+                }
             )
 
             if (isLoading) {
@@ -263,7 +271,7 @@ class LoginWebViewClient(
             }
             if (!baiduId.isNullOrEmpty() && ClientUtils.baiduId.isNullOrEmpty()) {
                 coroutineScope.launch {
-                    ClientUtils.saveBaiduId(context, baiduId)
+                    ClientUtils.saveBaiduId(baiduId)
                 }
             }
             coroutineScope.launch {
