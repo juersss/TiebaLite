@@ -105,12 +105,12 @@ import com.huanchengfly.tieba.post.utils.AccountUtil.LocalAccount
 import com.huanchengfly.tieba.post.utils.ImageUtil
 import com.huanchengfly.tieba.post.utils.StringUtil.getShortNumString
 import com.huanchengfly.tieba.post.utils.TiebaUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import kotlinx.collections.immutable.persistentListOf
 
 private fun getGridCells(
     context: Context,
-    listSingle: Boolean = context.appPreferences.listSingle
+    listSingle: Boolean = context.appPreferences.listSingle.value
 ): GridCells {
     return if (listSingle) {
         GridCells.Fixed(1)
@@ -463,8 +463,8 @@ fun HomePage(
         derivedStateOf { isEmpty && (!isLoggedIn || hasLoaded) }
     }
     val hasTopForum by remember { derivedStateOf { topForums.isNotEmpty() } }
-    val showHistoryForum by remember { derivedStateOf { context.appPreferences.homePageShowHistoryForum && historyForums.isNotEmpty() } }
-    var listSingle by remember { mutableStateOf(context.appPreferences.listSingle) }
+    val showHistoryForum by remember { derivedStateOf { context.appPreferences.homePageShowHistoryForum.value && historyForums.isNotEmpty() } }
+    var listSingle by remember { mutableStateOf(context.appPreferences.listSingle.value) }
     val isError by remember { derivedStateOf { error != null } }
     val gridCells by remember { derivedStateOf { getGridCells(context, listSingle) } }
 
@@ -516,7 +516,7 @@ fun HomePage(
                         icon = Icons.Outlined.ViewAgenda,
                         contentDescription = stringResource(id = R.string.title_switch_list_single)
                     ) {
-                        context.appPreferences.listSingle = !listSingle
+                        context.appPreferences.listSingle.set(!listSingle)
                         listSingle = !listSingle
                     }
                 }

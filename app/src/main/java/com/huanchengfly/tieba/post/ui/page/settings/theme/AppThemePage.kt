@@ -86,7 +86,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.ProvideContentColor
 import com.huanchengfly.tieba.post.ui.widgets.compose.TitleCentredToolbar
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberDialogState
 import com.huanchengfly.tieba.post.utils.ThemeUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.extension.toHexString
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -137,10 +137,11 @@ fun AppThemePage(
                 text = stringResource(id = R.string.button_finish),
                 onClick = {
                     customStatusBarFontDark = customStatusBarFontDark || !customToolbarPrimaryColor
-                    context.appPreferences.customPrimaryColor =
+                    context.appPreferences.customPrimaryColor.set(
                         CustomThemeDialog.toString(customPrimaryColor.toArgb())
-                    context.appPreferences.toolbarPrimaryColor = customToolbarPrimaryColor
-                    context.appPreferences.customStatusBarFontDark = customStatusBarFontDark
+                    )
+                    context.appPreferences.toolbarPrimaryColor.set(customToolbarPrimaryColor)
+                    context.appPreferences.customStatusBarFontDark.set(customStatusBarFontDark)
                     ThemeUtil.setUseDynamicTheme(false)
                     ThemeUtil.switchTheme(ThemeUtil.THEME_CUSTOM)
                 }
@@ -424,8 +425,8 @@ fun AppThemePage(
                                 contentAlignment = Alignment.Center
                             ) {
                                 val previewImageUri =
-                                    if (context.appPreferences.translucentThemeBackgroundPath != null) {
-                                        newFileUri(context.appPreferences.translucentThemeBackgroundPath!!)
+                                    if (context.appPreferences.translucentThemeBackgroundPath.value != null) {
+                                        newFileUri(context.appPreferences.translucentThemeBackgroundPath.value!!)
                                     } else {
                                         newResourceUri(R.drawable.user_header)
                                     }

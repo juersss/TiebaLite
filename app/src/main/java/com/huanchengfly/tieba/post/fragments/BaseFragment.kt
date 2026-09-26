@@ -19,7 +19,8 @@ import com.huanchengfly.tieba.post.isLandscape
 import com.huanchengfly.tieba.post.isPortrait
 import com.huanchengfly.tieba.post.isTablet
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
-import com.huanchengfly.tieba.post.utils.AppPreferencesUtils
+import com.huanchengfly.tieba.post.core.data.SettingsRepository
+import com.huanchengfly.tieba.post.core.data.settingsRepository
 import com.huanchengfly.tieba.post.utils.DialogUtil
 import com.huanchengfly.tieba.post.utils.HandleBackUtil
 import kotlinx.coroutines.*
@@ -74,8 +75,9 @@ abstract class BaseFragment<VB : ViewBinding> : Fragment(), BackHandledInterface
             }
             return mContext!!
         }
-    protected val appPreferences: AppPreferencesUtils
-        get() = AppPreferencesUtils.getInstance(attachContext)
+    // Phase 6.5：类型换成唯一事实源 SettingsRepository（成员名保留）
+    protected val appPreferences: SettingsRepository
+        get() = settingsRepository(attachContext)
 
     @TargetApi(23)
     override fun onAttach(context: Context) {

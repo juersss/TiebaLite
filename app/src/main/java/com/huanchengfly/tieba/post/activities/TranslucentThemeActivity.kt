@@ -27,6 +27,7 @@ import com.github.panpf.sketch.request.LoadResult
 import com.github.panpf.sketch.request.execute
 import com.github.panpf.sketch.resize.Scale
 import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.gson.reflect.TypeToken
 import com.gyf.immersionbar.ImmersionBar
 import com.huanchengfly.tieba.post.*
 import com.huanchengfly.tieba.post.App.Companion.translucentBackground
@@ -43,7 +44,7 @@ import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
 import com.huanchengfly.tieba.post.ui.widgets.theme.TintMaterialButton
 import com.huanchengfly.tieba.post.utils.*
 import com.huanchengfly.tieba.post.utils.ThemeUtil.TRANSLUCENT_THEME_DARK
-import com.huanchengfly.tieba.post.utils.ThemeUtil.TRANSLUCENT_THEME_LIGHT
+import com.huanchengfly.tieba.post.core.data.SettingsKeys.TRANSLUCENT_THEME_LIGHT
 import com.jaredrummler.android.colorpicker.ColorPickerDialog
 import com.jaredrummler.android.colorpicker.ColorPickerDialogListener
 import com.yalantis.ucrop.UCrop
@@ -170,6 +171,10 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
                 mTranslucentThemeColorAdapter.setPalette(mPalette)
                 binding?.selectColor?.visibility = View.VISIBLE
                 binding?.progress?.visibility = View.GONE
+            } else {
+                // 失败不收遮罩 = 全屏吞触摸的遮罩永久停留,页面冻结只能杀进程
+                binding?.progress?.visibility = View.GONE
+                toastShort(R.string.text_load_failed)
             }
         }
     }
@@ -207,7 +212,11 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
             it?.setOnClickListener(this@TranslucentThemeActivity)
         }
         wallpapers =
-            CacheUtil.getCache(this, "recommend_wallpapers", List::class.java) as List<String>?
+            CacheUtil.getCache(
+                this,
+                "recommend_wallpapers",
+                object : TypeToken<List<String>>() {}.type
+            ) as List<String>?
         binding?.colorTheme?.enableChangingLayoutTransition()
         wallpaperAdapter.setOnItemClickListener { _, item, _ ->
             launchUCrop(Uri.parse(item))
@@ -220,7 +229,7 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         mTranslucentThemeColorAdapter.onItemClickListener =
             OnItemClickListener { _: View?, themeColor: Int, _: Int, _: Int ->
-                appPreferences.translucentPrimaryColor = toString(themeColor)
+                appPreferences.translucentPrimaryColor.set(toString(themeColor))
                 binding?.mask?.post { ThemeUtils.refreshUI(this, this) }
             }
         binding?.selectColorRecyclerView?.apply {
@@ -232,8 +241,8 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
             )
             adapter = mTranslucentThemeColorAdapter
         }
-        alpha = appPreferences.translucentBackgroundAlpha
-        blur = appPreferences.translucentBackgroundBlur
+        alpha = appPreferences.translucentBackgroundAlpha.value
+        blur = appPreferences.translucentBackgroundBlur.value
         binding?.alpha?.apply {
             progress = this@TranslucentThemeActivity.alpha
             setOnSeekBarChangeListener(this@TranslucentThemeActivity)
@@ -284,7 +293,7 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
     }
 
     override fun onColorSelected(dialogId: Int, color: Int) {
-        appPreferences.translucentPrimaryColor = toString(color)
+        appPreferences.translucentPrimaryColor.set(toString(color))
         ThemeUtils.refreshUI(this, this)
     }
 
@@ -299,7 +308,7 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
 
     private fun savePic(callback: SavePicCallback<File>) {
         runCatching {
-            val oldFilePath = appPreferences.translucentThemeBackgroundPath
+            val oldFilePath = appPreferences.translucentThemeBackgroundPath.value
             if (oldFilePath != null) {
                 val oldFile = File(oldFilePath)
                 oldFile.delete()
@@ -323,12 +332,16 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
                     initialQuality = 97
                 )
                 mPalette = Palette.from(bitmap).generate()
-                appPreferences.translucentThemeBackgroundPath = file.absolutePath
+                appPreferences.translucentThemeBackgroundPath.set(file.absolutePath)
                 ThemeUtils.refreshUI(
                     this@TranslucentThemeActivity,
                     this@TranslucentThemeActivity
                 )
                 callback.onSuccess(file)
+            } else {
+                // 同 refreshBackground:失败必须收遮罩,否则"完成"按钮被吞、页面冻死
+                binding?.progress?.visibility = View.GONE
+                toastShort(R.string.text_load_failed)
             }
         }
     }
@@ -348,7 +361,7 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
     }
 
     private fun refreshTheme() {
-        when (appPreferences.translucentBackgroundTheme) {
+        when (appPreferences.translucentBackgroundTheme.value) {
             TRANSLUCENT_THEME_DARK -> {
                 binding?.darkColor?.setBackgroundTintResId(R.color.default_color_accent)
                 binding?.darkColor?.setTextColorResId(R.color.white)
@@ -392,8 +405,8 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
         when (v.id) {
             R.id.button_finish -> {
                 appPreferences.apply {
-                    translucentBackgroundAlpha = alpha
-                    translucentBackgroundBlur = blur
+                    translucentBackgroundAlpha.set(alpha)
+                    translucentBackgroundBlur.set(blur)
                 }
                 savePic(object : SavePicCallback<File> {
                     override fun onSuccess(t: File) {
@@ -427,11 +440,11 @@ class TranslucentThemeActivity : BaseActivity<ActivityTranslucentThemeBinding>()
                 )
             }
             R.id.dark_color -> {
-                appPreferences.translucentBackgroundTheme = TRANSLUCENT_THEME_DARK
+                appPreferences.translucentBackgroundTheme.set(TRANSLUCENT_THEME_DARK)
                 refreshTheme()
             }
             R.id.light_color -> {
-                appPreferences.translucentBackgroundTheme = TRANSLUCENT_THEME_LIGHT
+                appPreferences.translucentBackgroundTheme.set(TRANSLUCENT_THEME_LIGHT)
                 refreshTheme()
             }
         }

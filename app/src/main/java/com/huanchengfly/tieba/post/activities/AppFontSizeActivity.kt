@@ -12,6 +12,7 @@ import com.huanchengfly.tieba.post.databinding.ActivityAppFontSizeBinding
 import com.huanchengfly.tieba.post.dpToPxFloat
 import com.huanchengfly.tieba.post.toastShort
 import com.huanchengfly.tieba.post.utils.ThemeUtil
+import kotlin.math.roundToInt
 
 class AppFontSizeActivity : BaseActivity<ActivityAppFontSizeBinding>() {
     companion object {
@@ -59,7 +60,7 @@ class AppFontSizeActivity : BaseActivity<ActivityAppFontSizeBinding>() {
         }
         binding?.appbar?.collapsingToolbar?.toolbar?.title = title
 
-        oldFontSize = appPreferences.fontScale
+        oldFontSize = appPreferences.fontScale.value
 
         // 对话气泡 RecyclerView
         binding?.appFontSizeBubbles.apply {
@@ -68,8 +69,12 @@ class AppFontSizeActivity : BaseActivity<ActivityAppFontSizeBinding>() {
         }
 
         // SeekBar 初始进度
-        val progress = ((appPreferences.fontScale * 1000L - FONT_SCALE_MIN * 1000L).toInt()) /
-                ((FONT_SCALE_STEP * 1000L).toInt())
+        // 浮点换算必须取整到最近档而非截断:fontScale*1000L 与 MIN*1000L 先做 Float 减法
+        // 再 toInt 会因 0.8f/0.05f 的二进制表示把 11 档里的 4 档(含默认 1.0)错位一档,
+        // 拖动后按错位档位写回 → 字号被静默改动并触发重启
+        val progress = ((appPreferences.fontScale.value - FONT_SCALE_MIN) / FONT_SCALE_STEP)
+            .roundToInt()
+            .coerceIn(0, 10)
         binding?.appFontSizeSeekbar?.progress = progress
         updateSizeText(progress)
 
@@ -77,7 +82,7 @@ class AppFontSizeActivity : BaseActivity<ActivityAppFontSizeBinding>() {
         binding?.appFontSizeSeekbar?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 val fontScale = FONT_SCALE_MIN + progress * FONT_SCALE_STEP
-                appPreferences.fontScale = fontScale
+                appPreferences.fontScale.set(fontScale)
                 updatePreview(fontScale)
                 updateSizeText(progress)
             }
@@ -88,7 +93,7 @@ class AppFontSizeActivity : BaseActivity<ActivityAppFontSizeBinding>() {
     }
 
     override fun finish() {
-        if (!finished && oldFontSize != appPreferences.fontScale) {
+        if (!finished && oldFontSize != appPreferences.fontScale.value) {
             finished = true
             toastShort(R.string.toast_after_change_will_restart)
             App.INSTANCE.removeAllActivity()
@@ -106,7 +111,7 @@ class AppFontSizeActivity : BaseActivity<ActivityAppFontSizeBinding>() {
         }
     }
 
-    private fun updatePreview(fontScale: Float = appPreferences.fontScale) {
+    private fun updatePreview(fontScale: Float = appPreferences.fontScale.value) {
         bubblesAdapter.bubblesFontSize = 15f.dpToPxFloat() * fontScale
         binding?.appFontSizeText?.setTextSize(TypedValue.COMPLEX_UNIT_PX, 16f.dpToPxFloat() * fontScale)
     }

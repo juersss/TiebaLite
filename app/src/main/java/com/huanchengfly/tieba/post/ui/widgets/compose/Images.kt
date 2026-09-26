@@ -57,11 +57,10 @@ import com.huanchengfly.tieba.post.ui.page.photoview.PhotoViewActivity
 import com.huanchengfly.tieba.post.ui.page.photoview.PhotoViewActivity.Companion.EXTRA_PHOTO_VIEW_DATA
 import com.huanchengfly.tieba.post.utils.ImageUtil
 import com.huanchengfly.tieba.post.utils.NetworkUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
-
+import com.huanchengfly.tieba.post.core.data.appPreferences
 fun shouldLoadImage(context: Context, skipNetworkCheck: Boolean): Boolean {
     val imageLoadSettings =
-        context.appPreferences.imageLoadType?.toIntOrNull() ?: ImageUtil.SETTINGS_SMART_ORIGIN
+        context.appPreferences.imageLoadType.value?.toIntOrNull() ?: ImageUtil.SETTINGS_SMART_ORIGIN
     return skipNetworkCheck
             || imageLoadSettings == ImageUtil.SETTINGS_SMART_ORIGIN
             || imageLoadSettings == ImageUtil.SETTINGS_ALL_ORIGIN
@@ -236,7 +235,7 @@ fun NetworkImage(
     val enableClick = remember(photoViewData, shouldLoad) { photoViewData != null || !shouldLoad }
 
     val colorMask =
-        if (ExtendedTheme.colors.isNightMode && context.appPreferences.imageDarkenWhenNightMode) {
+        if (ExtendedTheme.colors.isNightMode && context.appPreferences.imageDarkenWhenNightMode.value) {
             MaskTransformation(Color.parseColor("#99000000"))
         } else null
 

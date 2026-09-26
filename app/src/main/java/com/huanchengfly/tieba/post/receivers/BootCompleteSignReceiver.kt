@@ -8,19 +8,19 @@ import android.content.Intent
 import com.huanchengfly.tieba.post.pendingIntentFlagMutable
 import com.huanchengfly.tieba.post.utils.TiebaUtil
 import com.huanchengfly.tieba.post.utils.Util
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import java.util.Calendar
 
 class BootCompleteSignReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (Intent.ACTION_BOOT_COMPLETED == intent.action) {
-            val autoSign = context.appPreferences.autoSign
+            val autoSign = context.appPreferences.autoSign.value
             if (autoSign) {
-                val autoSignTimeStr = context.appPreferences.autoSignTime
+                val autoSignTimeStr = context.appPreferences.autoSignTime.value
                 if (Util.getTimeInMillis(autoSignTimeStr) > System.currentTimeMillis()) {
                     TiebaUtil.initAutoSign(context)
                 } else {
-                    val signDay = context.appPreferences.signDay
+                    val signDay = context.appPreferences.signDay.value
                     if (signDay != Calendar.getInstance()[Calendar.DAY_OF_MONTH]) {
                         TiebaUtil.startSign(context)
                     }

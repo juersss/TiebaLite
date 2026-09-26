@@ -50,7 +50,7 @@ import com.huanchengfly.tieba.post.ui.utils.MainNavigationContentPosition
 import com.huanchengfly.tieba.post.ui.utils.MainNavigationType
 import com.huanchengfly.tieba.post.ui.widgets.compose.LazyLoadHorizontalPager
 import com.huanchengfly.tieba.post.ui.widgets.compose.MyScaffold
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootNavGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -126,11 +126,11 @@ fun MainPage(
 
     val hideExplore by rememberPreferenceAsState(
         key = booleanPreferencesKey("hideExplore"),
-        defaultValue = LocalContext.current.appPreferences.hideExplore
+        defaultValue = LocalContext.current.appPreferences.hideExplore.value
     )
     val defaultStart by rememberPreferenceAsState(
         key = intPreferencesKey("defaultStart"),
-        defaultValue = LocalContext.current.appPreferences.defaultStart
+        defaultValue = LocalContext.current.appPreferences.defaultStart.value
     )
     val pageCount by remember {
         derivedStateOf {
@@ -164,7 +164,7 @@ fun MainPage(
                     content = {
                         HomePage(
                             viewModel = homeViewModel,
-                            canOpenExplore = !LocalContext.current.appPreferences.hideExplore
+                            canOpenExplore = !LocalContext.current.appPreferences.hideExplore.value
                         ) {
                             coroutineScope.launch {
                                 pagerState.scrollToPage(1)

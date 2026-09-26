@@ -16,7 +16,7 @@ import com.huanchengfly.tieba.post.App.ThemeDelegate.getColorByAttr
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
 import com.huanchengfly.tieba.post.utils.ThemeUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.jaredrummler.android.colorpicker.ColorPickerDialog
 import com.jaredrummler.android.colorpicker.ColorPickerDialogListener
 
@@ -44,8 +44,8 @@ class CustomThemeDialog(context: Context) : AlertDialog(context),
         toolbarPrimaryColor = contentView.findViewById(R.id.custom_theme_toolbar_primary_color)
         setView(contentView)
         primaryColor = getColorByAttr(context, R.attr.colorPrimary, ThemeUtil.THEME_CUSTOM)
-        statusBarFontDark = context.appPreferences.customStatusBarFontDark
-        toolbarPrimary = context.appPreferences.toolbarPrimaryColor
+        statusBarFontDark = context.appPreferences.customStatusBarFontDark.value
+        toolbarPrimary = context.appPreferences.toolbarPrimaryColor.value
         refreshView()
     }
 
@@ -83,9 +83,9 @@ class CustomThemeDialog(context: Context) : AlertDialog(context),
     @SuppressLint("ApplySharedPref")
     override fun onClick(dialog: DialogInterface, which: Int) {
         context.appPreferences.apply {
-            customPrimaryColor = toString(primaryColor)
-            customStatusBarFontDark = (statusBarFontDark || !toolbarPrimary)
-            toolbarPrimaryColor = toolbarPrimary
+            customPrimaryColor.set(toString(primaryColor))
+            customStatusBarFontDark.set(this@CustomThemeDialog.statusBarFontDark || !this@CustomThemeDialog.toolbarPrimary)
+            toolbarPrimaryColor.set(this@CustomThemeDialog.toolbarPrimary)
         }
         dialog.dismiss()
     }

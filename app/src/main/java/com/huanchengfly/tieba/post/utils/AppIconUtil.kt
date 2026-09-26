@@ -4,6 +4,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import com.huanchengfly.tieba.post.App
+import com.huanchengfly.tieba.post.core.data.SettingsRepository
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import kotlinx.collections.immutable.persistentListOf
 
 
@@ -26,17 +28,18 @@ object LauncherIcons {
 }
 
 object AppIconUtil {
-    const val PREF_KEY_APP_ICON = "app_icon"
+    // PREF_KEY_APP_ICON 已迁 core:data 的 SettingsKeys.KEY_APP_ICON（Phase 5，单一事实源）
 
     private val context: Context
         get() = App.INSTANCE
 
-    private val appPreferences: AppPreferencesUtils
+    // Phase 6.5：类型换成唯一事实源 SettingsRepository（访问器名保留 appPreferences）
+    private val appPreferences: SettingsRepository
         get() = context.appPreferences
 
     fun setIcon(
-        icon: String = appPreferences.appIcon ?: LauncherIcons.NEW_ICON,
-        isThemed: Boolean = appPreferences.useThemedIcon,
+        icon: String = appPreferences.appIcon.value ?: LauncherIcons.NEW_ICON,
+        isThemed: Boolean = appPreferences.useThemedIcon.value,
     ) {
         val useThemedIcon = isThemed && LauncherIcons.SUPPORT_THEMED_ICON.contains(icon)
         var newIcon = if (LauncherIcons.ICONS.contains(icon)) {

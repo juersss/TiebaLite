@@ -10,6 +10,7 @@ import androidx.compose.material.lightColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -19,9 +20,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.core.data.SettingsKeys
 import com.huanchengfly.tieba.post.rememberPreferenceAsState
 import com.huanchengfly.tieba.post.utils.ThemeUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.compose.darken
 
 @Stable
@@ -59,7 +61,7 @@ data class ExtendedColors(
 
 val LocalExtendedColors = staticCompositionLocalOf {
     ExtendedColors(
-        ThemeUtil.THEME_DEFAULT,
+        SettingsKeys.THEME_DEFAULT,
         false,
     )
 }
@@ -119,8 +121,9 @@ private fun getDynamicTopBarColor(
     tonalPalette: TonalPalette,
     isNightMode: Boolean = false,
 ): Color {
-    val topBarUsePrimaryColor =
-        LocalContext.current.appPreferences.toolbarPrimaryColor
+    // 订阅式读（挂账 §三-1）：组合期不再走 Settings.value 的同步读路径
+    val topBarUsePrimaryColor by
+        LocalContext.current.appPreferences.toolbarPrimaryColor.state.collectAsState()
     val primaryColor = tonalPalette.primary40
     val backgroundColor = tonalPalette.neutralVariant99
     return if (topBarUsePrimaryColor) {
@@ -134,8 +137,9 @@ private fun getDynamicTopBarColor(
 private fun getDynamicOnTopBarColor(
     tonalPalette: TonalPalette,
 ): Color {
-    val topBarUsePrimaryColor =
-        LocalContext.current.appPreferences.toolbarPrimaryColor
+    // 订阅式读（挂账 §三-1）：组合期不再走 Settings.value 的同步读路径
+    val topBarUsePrimaryColor by
+        LocalContext.current.appPreferences.toolbarPrimaryColor.state.collectAsState()
     val onPrimaryColor = tonalPalette.primary100
     val onBackgroundColor = tonalPalette.neutralVariant10
     return if (topBarUsePrimaryColor) {
@@ -150,8 +154,9 @@ private fun getDynamicOnTopBarSecondaryColor(
     tonalPalette: TonalPalette,
     isNightMode: Boolean = false,
 ): Color {
-    val topBarUsePrimaryColor =
-        LocalContext.current.appPreferences.toolbarPrimaryColor
+    // 订阅式读（挂账 §三-1）：组合期不再走 Settings.value 的同步读路径
+    val topBarUsePrimaryColor by
+        LocalContext.current.appPreferences.toolbarPrimaryColor.state.collectAsState()
     val primaryColor = tonalPalette.primary80
     val backgroundColor = tonalPalette.neutralVariant40
     return if (topBarUsePrimaryColor) {
@@ -165,8 +170,9 @@ private fun getDynamicOnTopBarSecondaryColor(
 private fun getDynamicOnTopBarActiveColor(
     tonalPalette: TonalPalette,
 ): Color {
-    val topBarUsePrimaryColor =
-        LocalContext.current.appPreferences.toolbarPrimaryColor
+    // 订阅式读（挂账 §三-1）：组合期不再走 Settings.value 的同步读路径
+    val topBarUsePrimaryColor by
+        LocalContext.current.appPreferences.toolbarPrimaryColor.state.collectAsState()
     val primaryColor = tonalPalette.primary100
     val backgroundColor = tonalPalette.neutralVariant0
     return if (topBarUsePrimaryColor) {
@@ -180,8 +186,9 @@ private fun getDynamicOnTopBarActiveColor(
 private fun getDynamicTopBarSurfaceColor(
     tonalPalette: TonalPalette,
 ): Color {
-    val topBarUsePrimaryColor =
-        LocalContext.current.appPreferences.toolbarPrimaryColor
+    // 订阅式读（挂账 §三-1）：组合期不再走 Settings.value 的同步读路径
+    val topBarUsePrimaryColor by
+        LocalContext.current.appPreferences.toolbarPrimaryColor.state.collectAsState()
     val primaryColor = tonalPalette.primary90
     val backgroundColor = tonalPalette.neutralVariant95
     return if (topBarUsePrimaryColor) {
@@ -195,8 +202,9 @@ private fun getDynamicTopBarSurfaceColor(
 private fun getDynamicOnTopBarSurfaceColor(
     tonalPalette: TonalPalette,
 ): Color {
-    val topBarUsePrimaryColor =
-        LocalContext.current.appPreferences.toolbarPrimaryColor
+    // 订阅式读（挂账 §三-1）：组合期不再走 Settings.value 的同步读路径
+    val topBarUsePrimaryColor by
+        LocalContext.current.appPreferences.toolbarPrimaryColor.state.collectAsState()
     val primaryColor = tonalPalette.primary10
     val backgroundColor = tonalPalette.neutralVariant30
     return if (topBarUsePrimaryColor) {

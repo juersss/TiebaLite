@@ -33,7 +33,8 @@ import com.huanchengfly.tieba.post.ui.common.theme.interfaces.ExtraRefreshable
 import com.huanchengfly.tieba.post.ui.common.theme.utils.ThemeUtils
 import com.huanchengfly.tieba.post.ui.widgets.VoicePlayerView
 import com.huanchengfly.tieba.post.ui.widgets.theme.TintToolbar
-import com.huanchengfly.tieba.post.utils.AppPreferencesUtils
+import com.huanchengfly.tieba.post.core.data.SettingsRepository
+import com.huanchengfly.tieba.post.core.data.settingsRepository
 import com.huanchengfly.tieba.post.utils.DialogUtil
 import com.huanchengfly.tieba.post.utils.HandleBackUtil
 import com.huanchengfly.tieba.post.utils.ThemeUtil
@@ -60,7 +61,9 @@ abstract class BaseActivity<VB : ViewBinding> : AppCompatActivity(), ExtraRefres
     private var customStatusColor = -1
     private var statusBarTinted = false
 
-    val appPreferences: AppPreferencesUtils by lazy { AppPreferencesUtils.getInstance(this) }
+    // Phase 6.5：类型由旧 AppPreferencesUtils 门面换成唯一事实源 SettingsRepository
+    // （成员名保留 `appPreferences`，调用点只需补 .value / .set(...)）
+    val appPreferences: SettingsRepository by lazy { settingsRepository(this) }
 
     override fun onPause() {
         super.onPause()
@@ -69,7 +72,7 @@ abstract class BaseActivity<VB : ViewBinding> : AppCompatActivity(), ExtraRefres
 
     //禁止app字体大小跟随系统字体大小调节
     override fun getResources(): Resources {
-        val fontScale = appPreferences.fontScale
+        val fontScale = appPreferences.fontScale.value
         val resources = super.getResources()
         if (resources.configuration.fontScale != fontScale) {
             val configuration = resources.configuration
@@ -150,7 +153,7 @@ abstract class BaseActivity<VB : ViewBinding> : AppCompatActivity(), ExtraRefres
     override fun onResume() {
         super.onResume()
         isActivityRunning = true
-        if (appPreferences.followSystemNight) {
+        if (appPreferences.followSystemNight.value) {
             if (App.isSystemNight && !ThemeUtil.isNightMode()) {
                 ThemeUtil.switchToNightMode(this, false)
             } else if (!App.isSystemNight && ThemeUtil.isNightMode()) {
