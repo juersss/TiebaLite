@@ -3,7 +3,7 @@ package com.huanchengfly.tieba.post.ui.page.user.followlist
 import androidx.compose.runtime.Immutable
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.CommonResponse
 import com.huanchengfly.tieba.post.api.models.FollowBean
 import com.huanchengfly.tieba.post.api.models.FollowListBean
@@ -32,12 +32,14 @@ import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 
 @HiltViewModel
-class FollowListViewModel @Inject constructor() :
+class FollowListViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<FollowListUiIntent, FollowListPartialChange, FollowListUiState, UiEvent>() {
     override fun createInitialState(): FollowListUiState = FollowListUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<FollowListUiIntent, FollowListPartialChange, FollowListUiState> =
-        FollowListPartialChangeProducer
+        FollowListPartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: FollowListPartialChange): UiEvent? =
         when (partialChange) {
@@ -59,7 +61,9 @@ class FollowListViewModel @Inject constructor() :
             else -> null
         }
 
-    private object FollowListPartialChangeProducer :
+    private class FollowListPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<FollowListUiIntent, FollowListPartialChange, FollowListUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<FollowListUiIntent>): Flow<FollowListPartialChange> =
@@ -75,7 +79,7 @@ class FollowListViewModel @Inject constructor() :
             )
 
         private fun FollowListUiIntent.Refresh.toRefreshPartialChangeFlow(): Flow<FollowListPartialChange.Refresh> =
-            TiebaApi.getInstance().followListFlow(uid = uid)
+            tiebaApi.followListFlow(uid = uid)
                 .map<FollowListBean, FollowListPartialChange.Refresh> {
                     FollowListPartialChange.Refresh.Success(
                         page = 1,
@@ -89,7 +93,7 @@ class FollowListViewModel @Inject constructor() :
                 .catch { emit(FollowListPartialChange.Refresh.Failure(it)) }
 
         private fun FollowListUiIntent.LoadMore.toLoadMorePartialChangeFlow(): Flow<FollowListPartialChange.LoadMore> =
-            TiebaApi.getInstance().followListFlow(page + 1, uid)
+            tiebaApi.followListFlow(page + 1, uid)
                 .map<FollowListBean, FollowListPartialChange.LoadMore> {
                     FollowListPartialChange.LoadMore.Success(
                         page = it.pageNum,
@@ -101,7 +105,7 @@ class FollowListViewModel @Inject constructor() :
                 .catch { emit(FollowListPartialChange.LoadMore.Failure(it)) }
 
         private fun FollowListUiIntent.Unfollow.toUnfollowPartialChangeFlow(): Flow<FollowListPartialChange.Unfollow> =
-            TiebaApi.getInstance().unfollowFlow(portrait, tbs)
+            tiebaApi.unfollowFlow(portrait, tbs)
                 .map<CommonResponse, FollowListPartialChange.Unfollow> {
                     FollowListPartialChange.Unfollow.Success(userId)
                 }
@@ -109,7 +113,7 @@ class FollowListViewModel @Inject constructor() :
                 .catch { emit(FollowListPartialChange.Unfollow.Failure(it)) }
 
         private fun FollowListUiIntent.Follow.toFollowPartialChangeFlow(): Flow<FollowListPartialChange.Follow> =
-            TiebaApi.getInstance().followFlow(portrait, tbs)
+            tiebaApi.followFlow(portrait, tbs)
                 .map<FollowBean, FollowListPartialChange.Follow> {
                     FollowListPartialChange.Follow.Success(userId)
                 }

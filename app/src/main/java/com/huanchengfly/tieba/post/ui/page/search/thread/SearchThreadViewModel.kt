@@ -1,7 +1,7 @@
 package com.huanchengfly.tieba.post.ui.page.search.thread
 
 import androidx.compose.runtime.Stable
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.SearchThreadBean
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
@@ -27,14 +27,18 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class SearchThreadViewModel @Inject constructor() :
+class SearchThreadViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<SearchThreadUiIntent, SearchThreadPartialChange, SearchThreadUiState, SearchThreadUiEvent>() {
     override fun createInitialState(): SearchThreadUiState = SearchThreadUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<SearchThreadUiIntent, SearchThreadPartialChange, SearchThreadUiState> =
-        SearchThreadPartialChangeProducer
+        SearchThreadPartialChangeProducer(tiebaApi)
 
-    private object SearchThreadPartialChangeProducer :
+    private class SearchThreadPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<SearchThreadUiIntent, SearchThreadPartialChange, SearchThreadUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<SearchThreadUiIntent>): Flow<SearchThreadPartialChange> =
@@ -46,7 +50,7 @@ class SearchThreadViewModel @Inject constructor() :
             )
 
         private fun SearchThreadUiIntent.Refresh.producePartialChange(): Flow<SearchThreadPartialChange.Refresh> =
-            TiebaApi.getInstance().searchThreadFlow(keyword, 1, sortType)
+            tiebaApi.searchThreadFlow(keyword, 1, sortType)
                 .map<SearchThreadBean, SearchThreadPartialChange.Refresh> {
                     val threadList = it.data.postList
                     SearchThreadPartialChange.Refresh.Success(
@@ -60,7 +64,7 @@ class SearchThreadViewModel @Inject constructor() :
                 .catch { emit(SearchThreadPartialChange.Refresh.Failure(it)) }
 
         private fun SearchThreadUiIntent.LoadMore.producePartialChange(): Flow<SearchThreadPartialChange.LoadMore> =
-            TiebaApi.getInstance().searchThreadFlow(keyword, page + 1, sortType)
+            tiebaApi.searchThreadFlow(keyword, page + 1, sortType)
                 .map<SearchThreadBean, SearchThreadPartialChange.LoadMore> {
                     val threadList = it.data.postList
                     SearchThreadPartialChange.LoadMore.Success(

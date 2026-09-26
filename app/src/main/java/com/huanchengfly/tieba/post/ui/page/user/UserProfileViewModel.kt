@@ -2,13 +2,13 @@ package com.huanchengfly.tieba.post.ui.page.user
 
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.CommonResponse
 import com.huanchengfly.tieba.post.api.models.FollowBean
 import com.huanchengfly.tieba.post.api.models.GetUserBlackInfoBean
 import com.huanchengfly.tieba.post.api.models.PermissionListBean
-import com.huanchengfly.tieba.post.api.models.protos.User
-import com.huanchengfly.tieba.post.api.models.protos.profile.ProfileResponse
+import com.huanchengfly.tieba.post.core.network.model.protos.User
+import com.huanchengfly.tieba.post.core.network.model.protos.profile.ProfileResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.CommonUiEvent
@@ -32,12 +32,14 @@ import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 
 @HiltViewModel
-class UserProfileViewModel @Inject constructor() :
+class UserProfileViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<UserProfileUiIntent, UserProfilePartialChange, UserProfileUiState, UiEvent>() {
     override fun createInitialState(): UserProfileUiState = UserProfileUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<UserProfileUiIntent, UserProfilePartialChange, UserProfileUiState> =
-        UserProfilePartialChangeProducer
+        UserProfilePartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: UserProfilePartialChange): UiEvent? =
         when (partialChange) {
@@ -75,7 +77,9 @@ class UserProfileViewModel @Inject constructor() :
             else -> null
         }
 
-    private object UserProfilePartialChangeProducer :
+    private class UserProfilePartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<UserProfileUiIntent, UserProfilePartialChange, UserProfileUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<UserProfileUiIntent>): Flow<UserProfilePartialChange> =
@@ -93,18 +97,18 @@ class UserProfileViewModel @Inject constructor() :
             )
 
         private fun UserProfileUiIntent.Refresh.producePartialChange(): Flow<UserProfilePartialChange.Refresh> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .userProfileFlow(uid)
                 .map<ProfileResponse, UserProfilePartialChange.Refresh> {
                     checkNotNull(it.data_)
-                    checkNotNull(it.data_.user)
-                    UserProfilePartialChange.Refresh.Success(it.data_.user)
+                    checkNotNull(it.data_!!.user)
+                    UserProfilePartialChange.Refresh.Success(it.data_!!.user!!)
                 }
                 .onStart { emit(UserProfilePartialChange.Refresh.Start) }
                 .catch { emit(UserProfilePartialChange.Refresh.Failure(it)) }
 
         private fun UserProfileUiIntent.Follow.producePartialChange(): Flow<UserProfilePartialChange.Follow> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .followFlow(portrait, tbs)
                 .map<FollowBean, UserProfilePartialChange.Follow> {
                     UserProfilePartialChange.Follow.Success
@@ -113,7 +117,7 @@ class UserProfileViewModel @Inject constructor() :
                 .catch { emit(UserProfilePartialChange.Follow.Failure(it)) }
 
         private fun UserProfileUiIntent.Unfollow.producePartialChange(): Flow<UserProfilePartialChange.Unfollow> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .unfollowFlow(portrait, tbs)
                 .map<CommonResponse, UserProfilePartialChange.Unfollow> {
                     UserProfilePartialChange.Unfollow.Success
@@ -122,7 +126,7 @@ class UserProfileViewModel @Inject constructor() :
                 .catch { emit(UserProfilePartialChange.Unfollow.Failure(it)) }
 
         private fun UserProfileUiIntent.SetUserBlack.producePartialChange(): Flow<UserProfilePartialChange.PermListChange> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .setUserBlackFlow(uid, tbs, permList)
                 .map<CommonResponse, UserProfilePartialChange.PermListChange> {
                         UserProfilePartialChange.PermListChange.Success(this.permList)
@@ -131,7 +135,7 @@ class UserProfileViewModel @Inject constructor() :
                 .catch { emit(UserProfilePartialChange.PermListChange.Failure(it)) }
 
         private fun UserProfileUiIntent.GetUserBlackInfo.producePartialChange(): Flow<UserProfilePartialChange.GetUserBlackInfoChange> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .getUserBlackInfoFlow(uid)
                 .map<GetUserBlackInfoBean, UserProfilePartialChange.GetUserBlackInfoChange> {
                     UserProfilePartialChange.GetUserBlackInfoChange.Success(it.permList!!)

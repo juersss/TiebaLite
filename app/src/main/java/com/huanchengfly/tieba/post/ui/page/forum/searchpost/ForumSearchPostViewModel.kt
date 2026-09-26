@@ -3,7 +3,7 @@ package com.huanchengfly.tieba.post.ui.page.forum.searchpost
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.utils.DatabaseUtil
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.SearchThreadBean
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
@@ -37,12 +37,14 @@ import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 
 @HiltViewModel
-class ForumSearchPostViewModel @Inject constructor() :
+class ForumSearchPostViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<ForumSearchPostUiIntent, ForumSearchPostPartialChange, ForumSearchPostUiState, UiEvent>() {
     override fun createInitialState(): ForumSearchPostUiState = ForumSearchPostUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<ForumSearchPostUiIntent, ForumSearchPostPartialChange, ForumSearchPostUiState> =
-        ForumSearchPostPartialChangeProducer
+        ForumSearchPostPartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: ForumSearchPostPartialChange): UiEvent? =
         when (partialChange) {
@@ -67,7 +69,9 @@ class ForumSearchPostViewModel @Inject constructor() :
             else -> null
         }
 
-    private object ForumSearchPostPartialChangeProducer :
+    private class ForumSearchPostPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<ForumSearchPostUiIntent, ForumSearchPostPartialChange, ForumSearchPostUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<ForumSearchPostUiIntent>): Flow<ForumSearchPostPartialChange> =
@@ -100,7 +104,7 @@ class ForumSearchPostViewModel @Inject constructor() :
                     DatabaseUtil.saveSearchPostHistory(it, forumName)
                 }
                 .flatMapConcat {
-                    TiebaApi.getInstance()
+                    tiebaApi
                         .searchPostFlow(it, forumName, forumId, sortType, filterType)
                 }
                 .map<SearchThreadBean, ForumSearchPostPartialChange.Refresh> {
@@ -127,7 +131,7 @@ class ForumSearchPostViewModel @Inject constructor() :
                 .flowOn(Dispatchers.IO)
 
         private fun ForumSearchPostUiIntent.LoadMore.producePartialChange(): Flow<ForumSearchPostPartialChange.LoadMore> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .searchPostFlow(keyword, forumName, forumId, sortType, filterType, page + 1)
                 .map<SearchThreadBean, ForumSearchPostPartialChange.LoadMore> {
                     val postList = it.data.postList.toImmutableList()

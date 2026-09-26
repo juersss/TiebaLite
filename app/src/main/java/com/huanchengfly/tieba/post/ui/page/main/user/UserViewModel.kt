@@ -2,9 +2,9 @@ package com.huanchengfly.tieba.post.ui.page.main.user
 
 import androidx.compose.runtime.Stable
 import com.huanchengfly.tieba.post.App
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.utils.DatabaseUtil
-import com.huanchengfly.tieba.post.api.models.protos.profile.ProfileResponse
+import com.huanchengfly.tieba.post.core.network.model.protos.profile.ProfileResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.CommonUiEvent
@@ -29,12 +29,14 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class UserViewModel @Inject constructor() : BaseViewModel<UserUiIntent, UserPartialChange, UserUiState, UserUiEvent>() {
+class UserViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) : BaseViewModel<UserUiIntent, UserPartialChange, UserUiState, UserUiEvent>() {
     override fun createInitialState(): UserUiState =
         UserUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<UserUiIntent, UserPartialChange, UserUiState> =
-        UserPartialChangeProducer
+        UserPartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: UserPartialChange): UiEvent? =
         when (partialChange) {
@@ -42,7 +44,9 @@ class UserViewModel @Inject constructor() : BaseViewModel<UserUiIntent, UserPart
             else -> null
         }
 
-    object UserPartialChangeProducer :PartialChangeProducer<UserUiIntent, UserPartialChange, UserUiState> {
+    class UserPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :PartialChangeProducer<UserUiIntent, UserPartialChange, UserUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<UserUiIntent>): Flow<UserPartialChange> =
             merge(
@@ -54,8 +58,14 @@ class UserViewModel @Inject constructor() : BaseViewModel<UserUiIntent, UserPart
             return if (account == null) {
                 listOf(UserPartialChange.Refresh.NotLogin).asFlow()
             } else {
-                        TiebaApi.getInstance()
-                            .userProfileFlow(account.uid.toLong())
+                // toLong 必须在 flow 链组装前完成守卫:参数求值期抛出的异常在
+                // .catch 之外,会沿管线进 viewModelScope 崩进程
+                val uid = account.uid.toLongOrNull()
+                if (uid == null) {
+                    listOf(UserPartialChange.Refresh.Failure(errorMessage = "uid 解析失败")).asFlow()
+                } else {
+                        tiebaApi
+                            .userProfileFlow(uid)
                             .map<ProfileResponse, UserPartialChange> { profile ->
                                 val user = checkNotNull(profile.data_?.user)
                                 account.apply {
@@ -94,6 +104,7 @@ class UserViewModel @Inject constructor() : BaseViewModel<UserUiIntent, UserPart
                         it.printStackTrace()
                         emit(UserPartialChange.Refresh.Failure(errorMessage = it.getErrorMessage()))
                     }
+                }
             }
         }
     }

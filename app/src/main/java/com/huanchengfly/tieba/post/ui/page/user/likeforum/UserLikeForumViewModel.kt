@@ -1,7 +1,7 @@
 package com.huanchengfly.tieba.post.ui.page.user.likeforum
 
 import androidx.compose.runtime.Immutable
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.UserLikeForumBean
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
@@ -26,14 +26,18 @@ import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 
 @HiltViewModel
-class UserLikeForumViewModel @Inject constructor() :
+class UserLikeForumViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<UserLikeForumUiIntent, UserLikeForumPartialChange, UserLikeForumUiState, UiEvent>() {
     override fun createInitialState(): UserLikeForumUiState = UserLikeForumUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<UserLikeForumUiIntent, UserLikeForumPartialChange, UserLikeForumUiState> =
-        UserLikeForumPartialChangeProducer
+        UserLikeForumPartialChangeProducer(tiebaApi)
 
-    private object UserLikeForumPartialChangeProducer :
+    private class UserLikeForumPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<UserLikeForumUiIntent, UserLikeForumPartialChange, UserLikeForumUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<UserLikeForumUiIntent>): Flow<UserLikeForumPartialChange> =
@@ -45,7 +49,7 @@ class UserLikeForumViewModel @Inject constructor() :
             )
 
         private fun UserLikeForumUiIntent.Refresh.toPartialChangeFlow(): Flow<UserLikeForumPartialChange.Refresh> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .userLikeForumFlow(uid.toString())
                 .map<UserLikeForumBean, UserLikeForumPartialChange.Refresh> {
                     UserLikeForumPartialChange.Refresh.Success(
@@ -58,7 +62,7 @@ class UserLikeForumViewModel @Inject constructor() :
                 .catch { emit(UserLikeForumPartialChange.Refresh.Failure(it)) }
 
         private fun UserLikeForumUiIntent.LoadMore.toPartialChangeFlow(): Flow<UserLikeForumPartialChange.LoadMore> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .userLikeForumFlow(uid.toString(), page + 1)
                 .map<UserLikeForumBean, UserLikeForumPartialChange.LoadMore> {
                     UserLikeForumPartialChange.LoadMore.Success(

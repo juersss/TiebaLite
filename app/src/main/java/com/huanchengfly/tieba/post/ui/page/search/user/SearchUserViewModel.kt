@@ -1,7 +1,7 @@
 package com.huanchengfly.tieba.post.ui.page.search.user
 
 import androidx.compose.runtime.Stable
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.SearchUserBean
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
@@ -27,14 +27,18 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class SearchUserViewModel @Inject constructor() :
+class SearchUserViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<SearchUserUiIntent, SearchUserPartialChange, SearchUserUiState, SearchUserUiEvent>() {
     override fun createInitialState(): SearchUserUiState = SearchUserUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<SearchUserUiIntent, SearchUserPartialChange, SearchUserUiState> =
-        SearchUserPartialChangeProducer
+        SearchUserPartialChangeProducer(tiebaApi)
 
-    private object SearchUserPartialChangeProducer :
+    private class SearchUserPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<SearchUserUiIntent, SearchUserPartialChange, SearchUserUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<SearchUserUiIntent>): Flow<SearchUserPartialChange> =
@@ -44,7 +48,7 @@ class SearchUserViewModel @Inject constructor() :
             )
 
         private fun SearchUserUiIntent.Refresh.producePartialChange(): Flow<SearchUserPartialChange.Refresh> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .searchUserFlow(keyword)
                 .map<SearchUserBean, SearchUserPartialChange.Refresh> {
                     val fuzzyForumList = it.data?.fuzzyMatch ?: emptyList()

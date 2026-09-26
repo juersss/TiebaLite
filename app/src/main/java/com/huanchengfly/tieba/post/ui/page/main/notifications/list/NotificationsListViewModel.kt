@@ -3,7 +3,7 @@ package com.huanchengfly.tieba.post.ui.page.main.notifications.list
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.util.fastMap
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.MessageListBean
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
@@ -43,23 +43,27 @@ abstract class NotificationsListViewModel :
 
 @Stable
 @HiltViewModel
-class ReplyMeListViewModel @Inject constructor() : NotificationsListViewModel() {
+class ReplyMeListViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) : NotificationsListViewModel() {
     override fun createPartialChangeProducer():
             PartialChangeProducer<NotificationsListUiIntent, NotificationsListPartialChange, NotificationsListUiState> {
-        return NotificationsListPartialChangeProducer(NotificationsType.ReplyMe)
+        return NotificationsListPartialChangeProducer(NotificationsType.ReplyMe, tiebaApi)
     }
 }
 
 @Stable
 @HiltViewModel
-class AtMeListViewModel @Inject constructor() : NotificationsListViewModel() {
+class AtMeListViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) : NotificationsListViewModel() {
     override fun createPartialChangeProducer():
             PartialChangeProducer<NotificationsListUiIntent, NotificationsListPartialChange, NotificationsListUiState> {
-        return NotificationsListPartialChangeProducer(NotificationsType.AtMe)
+        return NotificationsListPartialChangeProducer(NotificationsType.AtMe, tiebaApi)
     }
 }
 
-private class NotificationsListPartialChangeProducer(private val type: NotificationsType) : PartialChangeProducer<NotificationsListUiIntent, NotificationsListPartialChange, NotificationsListUiState> {
+private class NotificationsListPartialChangeProducer(private val type: NotificationsType, private val tiebaApi: ITiebaApi) : PartialChangeProducer<NotificationsListUiIntent, NotificationsListPartialChange, NotificationsListUiState> {
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun toPartialChangeFlow(intentFlow: Flow<NotificationsListUiIntent>): Flow<NotificationsListPartialChange> =
         merge(
@@ -69,8 +73,8 @@ private class NotificationsListPartialChangeProducer(private val type: Notificat
 
     private fun produceRefreshPartialChange(): Flow<NotificationsListPartialChange.Refresh> =
         (when (type) {
-            NotificationsType.ReplyMe -> TiebaApi.getInstance().replyMeFlow()
-            NotificationsType.AtMe -> TiebaApi.getInstance().atMeFlow()
+            NotificationsType.ReplyMe -> tiebaApi.replyMeFlow()
+            NotificationsType.AtMe -> tiebaApi.atMeFlow()
         }).map<MessageListBean, NotificationsListPartialChange.Refresh> { messageListBean ->
             val data =
                 ((if (type == NotificationsType.ReplyMe) messageListBean.replyList else messageListBean.atList)
@@ -87,8 +91,8 @@ private class NotificationsListPartialChangeProducer(private val type: Notificat
 
     private fun NotificationsListUiIntent.LoadMore.produceLoadMorePartialChange() =
         (when (type) {
-            NotificationsType.ReplyMe -> TiebaApi.getInstance().replyMeFlow(page = page)
-            NotificationsType.AtMe -> TiebaApi.getInstance().atMeFlow(page = page)
+            NotificationsType.ReplyMe -> tiebaApi.replyMeFlow(page = page)
+            NotificationsType.AtMe -> tiebaApi.atMeFlow(page = page)
         }).map<MessageListBean, NotificationsListPartialChange.LoadMore> { messageListBean ->
             val data =
                 ((if (type == NotificationsType.ReplyMe) messageListBean.replyList else messageListBean.atList)

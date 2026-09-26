@@ -1,7 +1,7 @@
 package com.huanchengfly.tieba.post.ui.page.search.forum
 
 import androidx.compose.runtime.Stable
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.SearchForumBean
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
@@ -26,14 +26,18 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class SearchForumViewModel @Inject constructor() :
+class SearchForumViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<SearchForumUiIntent, SearchForumPartialChange, SearchForumUiState, SearchForumUiEvent>() {
     override fun createInitialState() = SearchForumUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<SearchForumUiIntent, SearchForumPartialChange, SearchForumUiState> =
-        SearchForumPartialChangeProducer
+        SearchForumPartialChangeProducer(tiebaApi)
 
-    private object SearchForumPartialChangeProducer :
+    private class SearchForumPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<SearchForumUiIntent, SearchForumPartialChange, SearchForumUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<SearchForumUiIntent>): Flow<SearchForumPartialChange> =
@@ -43,7 +47,7 @@ class SearchForumViewModel @Inject constructor() :
             )
 
         private fun SearchForumUiIntent.Refresh.producePartialChange(): Flow<SearchForumPartialChange.Refresh> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .searchForumFlow(keyword)
                 .map<SearchForumBean, SearchForumPartialChange.Refresh> {
                     val fuzzyForumList = it.data?.fuzzyMatch ?: emptyList()
