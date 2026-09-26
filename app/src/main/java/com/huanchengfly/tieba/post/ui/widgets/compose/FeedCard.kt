@@ -31,8 +31,8 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.ProvideTextStyle
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -40,8 +40,10 @@ import androidx.compose.material.icons.rounded.PhotoSizeSelectActual
 import androidx.compose.material.icons.rounded.SwapCalls
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,16 +71,23 @@ import com.eygraber.compose.placeholder.material.placeholder
 import com.stoyanvuchev.systemuibarstweaker.rememberSystemUIBarsTweaker
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.api.AgreeParams
 import com.huanchengfly.tieba.post.api.models.ThreadBean
-import com.huanchengfly.tieba.post.api.models.protos.Media
-import com.huanchengfly.tieba.post.api.models.protos.OriginThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.PostInfoList
-import com.huanchengfly.tieba.post.api.models.protos.SimpleForum
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.User
-import com.huanchengfly.tieba.post.api.models.protos.VideoInfo
-import com.huanchengfly.tieba.post.api.models.protos.abstractText
-import com.huanchengfly.tieba.post.api.models.protos.renders
+import com.huanchengfly.tieba.post.api.models.lightedAsAgree
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
+import com.huanchengfly.tieba.post.core.network.model.protos.agreeCountDelta
+import com.huanchengfly.tieba.post.core.network.model.protos.displayDelta
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.core.network.model.protos.Media
+import com.huanchengfly.tieba.post.core.network.model.protos.OriginThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.PostInfoList
+import com.huanchengfly.tieba.post.core.network.model.protos.SimpleForum
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.User
+import com.huanchengfly.tieba.post.core.network.model.protos.VideoInfo
+import com.huanchengfly.tieba.post.ui.common.abstractText
+import com.huanchengfly.tieba.post.ui.common.renders
 import com.huanchengfly.tieba.post.arch.BaseComposeActivity.Companion.LocalWindowSizeClass
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
 import com.huanchengfly.tieba.post.arch.wrapImmutable
@@ -97,7 +106,7 @@ import com.huanchengfly.tieba.post.utils.EmoticonUtil.emoticonString
 import com.huanchengfly.tieba.post.utils.ImageUtil
 import com.huanchengfly.tieba.post.utils.StringUtil
 import com.huanchengfly.tieba.post.utils.StringUtil.getShortNumString
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlin.math.max
@@ -450,7 +459,7 @@ private fun ThreadMedia(
     val hasPhoto = remember(mediaCount) { mediaCount > 0 }
     val isSinglePhoto = remember(mediaCount) { mediaCount == 1 }
 
-    val hideMedia = context.appPreferences.hideMedia
+    val hideMedia = context.appPreferences.hideMedia.value
 
     val windowWidthSizeClass = LocalWindowSizeClass.current.widthSizeClass
     val singleMediaFraction = remember(windowWidthSizeClass) {
@@ -630,7 +639,8 @@ fun OriginThreadCard(
         ThreadMedia(
             forumId = originThreadInfo.get { fid },
             forumName = originThreadInfo.get { fname },
-            threadId = originThreadInfo.get { tid.toLong() },
+            // tid 服务端可能下发空串(原帖已删):toLong 直接抛会崩掉整页列表,降级 0
+            threadId = originThreadInfo.get { tid.toLongOrNull() ?: 0L },
             medias = originThreadInfo.getImmutableList { media },
             videoInfo = originThreadInfo.get { video_info }?.wrapImmutable()
         )
@@ -697,27 +707,51 @@ fun ThreadReplyBtn(
 
 @Composable
 fun ThreadAgreeBtn(
+    threadId: Long,
     hasAgree: Boolean,
     agreeNum: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 差分模型迁移(列表页收尾项):本进程操作过的帖子以 OpRecordStore 记录为准——
+    // 列表端点的 agree.hasAgree 是已知不可靠回显(踩过也可能回 1),直接读它会把
+    // "帖子页刚踩过的楼"显示成"已赞点亮"。无记录时回退服务端回显(旧行为,零回归)。
+    // records 在 App.onCreate 发起后台加载,完成后是完整镜像;加载窗口内为空,
+    // 此时按 hasAgree 回退(与 OpRecordStore.agreeFlag 同口径)。各页 confirm
+    // 键(id/threadId 实测同为 tid)与本处 threadId 一致,帖子页与列表页状态互通。
+    //
+    // 定点订阅(重组治理):此处改订阅**本线程专属**的记录流,而不是整张 records Map。
+    // 订阅整张 Map 时,任意一条记录变化(哪怕来自别的帖子)都会发射新 Map,
+    // 屏幕上所有可见卡片的 ThreadAgreeBtn 一起重组;经 recordFlow 过滤后,
+    // 只有该帖自身记录变化才会重组。initial 取当前快照,保持首帧显示与旧行为一致。
+    // 用 keyed produceState 而非 remember+collectAsState:collectAsState 的收集器
+    // 永不随重启,threadId 变化(无 key 列表按 index 复用 composition)时会一直收集
+    // 旧帖子的 flow,把别人的赞踩状态叠到本卡上
+    val record by produceState(
+        initialValue = OpRecordStore.records.value[OpRecordStore.key(AgreeParams.OBJ_THREAD, threadId)],
+        threadId
+    ) {
+        OpRecordStore.recordFlow(AgreeParams.OBJ_THREAD, threadId).collect { value = it }
+    }
+    val lit = record?.my == MyAgreeOp.AGREE || (record == null && hasAgree)
+    // 基准是原始 agreeNum(赞数)而非 diffAgreeNum,踩轴不得影响赞数 → 用赞轴专用差分
+    val displayNum = (agreeNum.toLongOrNull() ?: 0L) + (record?.agreeCountDelta() ?: 0L)
     val contentColor =
-        if (hasAgree) ExtendedTheme.colors.primary else ExtendedTheme.colors.textSecondary
+        if (lit) ExtendedTheme.colors.primary else ExtendedTheme.colors.textSecondary
     val animatedColor by animateColorAsState(contentColor, label = "agreeBtnContentColor")
 
     ActionBtn(
         icon = {
             Icon(
-                imageVector = if (hasAgree) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                imageVector = if (lit) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                 contentDescription = stringResource(id = R.string.desc_like),
             )
         },
         text = {
             Text(
-                text = if (agreeNum == "0" || agreeNum.isEmpty())
+                text = if (displayNum == 0L)
                     stringResource(id = R.string.title_agree)
-                else agreeNum.toLongOrNull()?.getShortNumString() ?: agreeNum
+                else displayNum.getShortNumString()
             )
         },
         modifier = modifier,
@@ -823,7 +857,10 @@ fun FeedCard(
                 )
 
                 ThreadAgreeBtn(
-                    hasAgree = item.get { agree?.hasAgree == 1 },
+                    threadId = item.get { id },
+                    // 无记录回退必须走官方组合判读(serverEchoOp):裸 hasAgree 是
+                    // "已表态"语义,"已踩"帖(hasAgree=1&agreeType=5)会被误点亮成已赞
+                    hasAgree = item.get { agree?.serverEchoOp() } == MyAgreeOp.AGREE,
                     agreeNum = item.get { agreeNum }.toString(),
                     onClick = { onAgree(item.get()) },
                     modifier = Modifier.weight(1f)
@@ -894,7 +931,10 @@ fun FeedCard(
                 )
 
                 ThreadAgreeBtn(
-                    hasAgree = item.get { threadInfo.agree.hasAgree == 1 },
+                    threadId = item.get { threadInfo.threadId },
+                    // 无记录回退走 gson Agree 的组合判读(lightedAsAgree,与 proto
+                    // serverEchoOp 同语义);裸 hasAgree 是"已表态"语义会把"已踩"误亮
+                    hasAgree = item.get { threadInfo.agree.lightedAsAgree() },
                     agreeNum = item.get { threadInfo.agreeNum }.toString(),
                     onClick = { onAgree(item.get()) },
                     modifier = Modifier.weight(1f)
@@ -980,7 +1020,9 @@ fun FeedCard(
                 )
 
                 ThreadAgreeBtn(
-                    hasAgree = item.get { agree?.hasAgree == 1 },
+                    threadId = item.get { thread_id },
+                    // 同上:无记录回退走组合判读
+                    hasAgree = item.get { agree?.serverEchoOp() } == MyAgreeOp.AGREE,
                     agreeNum = item.get { agree_num }.toString(),
                     onClick = { onAgree(item.get()) },
                     modifier = Modifier.weight(1f)

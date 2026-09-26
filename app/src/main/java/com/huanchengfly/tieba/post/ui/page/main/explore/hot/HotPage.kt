@@ -38,7 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.eygraber.compose.placeholder.material.placeholder
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.protos.hasAgree
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
 import com.huanchengfly.tieba.post.arch.onGlobalEvent
@@ -318,7 +321,12 @@ fun HotPage(
                                         HotUiIntent.Agree(
                                             threadId = it.threadId,
                                             postId = it.firstPostId,
-                                            hasAgree = it.hasAgree
+                                            hasAgree = OpRecordStore.agreeFlag(
+                                                AgreeParams.OBJ_THREAD,
+                                                it.threadId, if (it.agree?.serverEchoOp() == MyAgreeOp.AGREE) 1 else 0
+                                            ),
+                                            // E1:opAgree 官方必带 forum_id
+                                            forumId = it.forumId
                                         )
                                     )
                                 },

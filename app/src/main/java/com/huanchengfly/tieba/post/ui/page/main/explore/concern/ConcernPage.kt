@@ -15,7 +15,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.huanchengfly.tieba.post.api.models.protos.hasAgree
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.arch.CommonUiEvent.ScrollToTop.bindScrollToTopEvent
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
@@ -94,7 +97,9 @@ fun ConcernPage(
                     contentType = { _, item -> item.recommendType }
                 ) { index, item ->
                     Container {
-                        if (item.recommendType == 1) {
+                        // threadList 与 recommendType 无一致性约束(recommendType==1 但
+                        // thread_list 缺失时为 null):必须双条件,`!!` 会崩整个关注 tab
+                        if (item.recommendType == 1 && item.threadList != null) {
                             Column {
                                 FeedCard(
                                     item = wrapImmutable(item.threadList!!),
@@ -121,7 +126,14 @@ fun ConcernPage(
                                             ConcernUiIntent.Agree(
                                                 it.threadId,
                                                 it.firstPostId,
-                                                it.hasAgree
+                                                // 与帖子页/其他列表页同构:有本地记录以记录为准,
+                                                // 列表回显 hasAgree 不可靠(踩过也可能回 1)仅作无记录兜底
+                                                OpRecordStore.agreeFlag(
+                                                    AgreeParams.OBJ_THREAD,
+                                                    it.threadId, if (it.agree?.serverEchoOp() == MyAgreeOp.AGREE) 1 else 0
+                                                ),
+                                                // E1:opAgree 官方必带 forum_id
+                                                forumId = it.forumId
                                             )
                                         )
                                     },
