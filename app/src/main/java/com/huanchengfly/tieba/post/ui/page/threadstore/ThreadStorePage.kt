@@ -67,7 +67,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.UserHeader
 import com.huanchengfly.tieba.post.ui.widgets.compose.states.StateScreen
 import com.huanchengfly.tieba.post.utils.StringUtil
 import com.huanchengfly.tieba.post.utils.StringUtil.getUsernameAnnotatedString
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.ramcosta.composedestinations.annotation.DeepLink
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -127,6 +127,9 @@ fun ThreadStorePage(
     }
     viewModel.onEvent<ThreadStoreUiEvent.Delete.Success> {
         scaffoldState.snackbarHostState.showSnackbar(context.getString(R.string.delete_store_success))
+        // 服务端是真删(OFFSET 分页),本地只移除条目不动游标:删除后翻页会整体左移,
+        // 漏掉末尾条目且可能提前耗尽空页判"没有更多"。重拉首页让游标与列表重新对齐。
+        viewModel.send(ThreadStoreUiIntent.Refresh)
     }
     MyScaffold(
         backgroundColor = Color.Transparent,
@@ -184,22 +187,33 @@ fun ThreadStorePage(
                             StoreItem(
                                 info = info,
                                 onUserClick = {
-                                    info.author.lzUid?.let {
-                                        navigator.navigate(UserProfilePageDestination(it.toLong()))
+                                    // ThreadStoreInfo 字段全部非空声明且无默认值,gson Unsafe
+                                    // 分配在字段缺失时会留运行期 null:一律安全调用
+                                    val lzUid = info.author?.lzUid?.toLongOrNull()
+                                    if (lzUid != null) {
+                                        navigator.navigate(UserProfilePageDestination(lzUid))
                                     }
                                 },
                                 onClick = {
+                                    // 收藏接口可能漏发 mark_pid(被标记楼层已删)等字段:
+                                    // 字符串转换必须守卫,缺定位信息时降级从头进帖,不得崩
+                                    val threadId = info.threadId?.toLongOrNull() ?: return@StoreItem
+                                    val maxPid = info.maxPid?.toLongOrNull()
+                                    val maxFloor = info.postNo?.toIntOrNull()
+                                    val extra = if (maxPid != null && maxFloor != null) {
+                                        ThreadPageFromStoreExtra(
+                                            maxPid = maxPid,
+                                            maxFloor = maxFloor
+                                        )
+                                    } else null
                                     navigator.navigate(
                                         ThreadPageDestination(
-                                            threadId = info.threadId.toLong(),
-                                            postId = info.markPid.toLong(),
-                                            seeLz = context.appPreferences.collectThreadSeeLz,
-                                            sortType = if(context.appPreferences.collectThreadDescSort) ThreadSortType.SORT_TYPE_DESC else ThreadSortType.SORT_TYPE_DEFAULT,
+                                            threadId = threadId,
+                                            postId = info.markPid?.toLongOrNull() ?: 0L,
+                                            seeLz = context.appPreferences.collectThreadSeeLz.value,
+                                            sortType = if(context.appPreferences.collectThreadDescSort.value) ThreadSortType.SORT_TYPE_DESC else ThreadSortType.SORT_TYPE_DEFAULT,
                                             from = ThreadPageFrom.FROM_STORE,
-                                            extra = ThreadPageFromStoreExtra(
-                                                maxPid = info.maxPid.toLong(),
-                                                maxFloor = info.postNo.toInt()
-                                            )
+                                            extra = extra
                                         )
                                     )
                                 },
@@ -255,7 +269,8 @@ private fun StoreItem(
             UserHeader(
                 avatar = {
                     Avatar(
-                        data = StringUtil.getAvatarUrl(info.author.userPortrait),
+                        // 字段非空声明无默认值,gson 缺键会留运行期 null:渲染链与点击链同口径安全调用
+                        data = StringUtil.getAvatarUrl(info.author?.userPortrait),
                         size = Sizes.Small,
                         contentDescription = null
                     )
@@ -264,8 +279,8 @@ private fun StoreItem(
                     Text(
                         text = getUsernameAnnotatedString(
                             LocalContext.current,
-                            info.author.name ?: "",
-                            info.author.nameShow,
+                            info.author?.name ?: "",
+                            info.author?.nameShow,
                             LocalContentColor.current
                         )
                     )
@@ -277,13 +292,13 @@ private fun StoreItem(
                     append(info.title)
                     if (hasUpdate) {
                         append(" ")
-                        appendInlineContent("Update", info.postNo)
+                        appendInlineContent("Update", info.postNo ?: "")
                     }
                 }
             }
             val updateTip = stringResource(
                 id = R.string.tip_thread_store_update,
-                info.postNo
+                info.postNo ?: ""
             )
             val result = remember {
                 textMeasurer.measure(
