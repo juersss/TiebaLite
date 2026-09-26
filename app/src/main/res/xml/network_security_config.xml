@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 外部审查-1 收尾:默认禁止明文。凭据接口已全量 HTTPS 且有明文凭据拦截器兜底;
+     其余任何 http 请求(含 WebView 页面)一律拒绝。
+     例外仅两个无凭据的静态资源域:百度这两个 CDN 的 TLS 证书不覆盖自身域名
+     (*.baidu.com 通配符只匹配一层子域,static.tieba/tb.himg 均为两层,已双网络
+     实测确认),HTTPS 不可用;仅承载头像与编辑器表情图片。
+     注:API 23 上 networkSecurityConfig 不生效,由 manifest 的
+     usesCleartextTraffic="false" 兜底(两者并存,24+ 以本文件为准)。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">tb.himg.baidu.com</domain>
+        <domain includeSubdomains="false">static.tieba.baidu.com</domain>
+    </domain-config>
+</network-security-config>
