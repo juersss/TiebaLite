@@ -24,12 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.huanchengfly.tieba.post.BuildConfig
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.toastShort
@@ -37,7 +37,7 @@ import com.huanchengfly.tieba.post.ui.common.theme.compose.ExtendedTheme
 import com.huanchengfly.tieba.post.ui.widgets.compose.BackNavigationIcon
 import com.huanchengfly.tieba.post.ui.widgets.compose.MyScaffold
 import com.huanchengfly.tieba.post.ui.widgets.compose.TitleCentredToolbar
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.launchUrl
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -76,11 +76,13 @@ fun AboutPage(
             ) {
                 Column(modifier = Modifier.align(Alignment.Center)) {
                     Image(
-                        painter = rememberDrawablePainter(
-                            drawable = LocalContext.current.getDrawable(
-                                R.mipmap.ic_launcher_new
-                            )
-                        ),
+                        // 用 drawable 里的位图版图标，**不要**换成 `R.mipmap.ic_launcher_new`：
+                        // 该 mipmap 在 API 26+ 上解析到 mipmap-anydpi-v26 下的 <adaptive-icon> XML，
+                        // 而 Compose 的 painterResource 只认 VectorDrawable 与位图，会当场抛
+                        // IllegalArgumentException("Only VectorDrawables and rasterized asset types are supported")
+                        // ——点击"关于"直接崩（2026-09-17 MuMu 实机抓到）。
+                        // drawable/ic_launcher_new_round.png 是同套图标的位图版，无 anydpi 变体，安全。
+                        painter = painterResource(R.drawable.ic_launcher_new_round),
                         contentDescription = null,
                         modifier = Modifier.size(100.dp)
                     )
@@ -124,9 +126,10 @@ fun AboutPage(
                             lastClickTime = currentTime
                             if (clickCount >= 7) {
                                 clickCount = 0
-                                context.appPreferences.showExperimentalFeatures =
-                                    !context.appPreferences.showExperimentalFeatures
-                                if (context.appPreferences.showExperimentalFeatures) {
+                                context.appPreferences.showExperimentalFeatures.set(
+                                    !context.appPreferences.showExperimentalFeatures.value
+                                )
+                                if (context.appPreferences.showExperimentalFeatures.value) {
                                     context.toastShort(R.string.toast_experimental_features_enabled)
                                 } else {
                                     context.toastShort(R.string.toast_experimental_features_disabled)
