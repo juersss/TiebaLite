@@ -50,6 +50,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.github.panpf.sketch.compose.AsyncImage
 import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.core.common.upgradeImageUrlToHttps
 import com.huanchengfly.tieba.post.ui.widgets.compose.video.util.getDurationString
 
 internal val LocalVideoPlayerController =
@@ -65,8 +66,11 @@ fun rememberVideoPlayerController(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    // key 只留 context:coroutineScope 每个新组合都是新对象(无 equals),放进 key 会让
+    // "键变化→重新 init"在每次新建组合时触发,Saver.restore 沦为死代码——配置重建/
+    // LazyColumn 回收重入后播放进度必然丢失。scope 由下方闭包捕获当前组合的最新值
     return rememberSaveable(
-        context, coroutineScope,
+        context,
         saver = object : Saver<DefaultVideoPlayerController, VideoPlayerState> {
             override fun restore(value: VideoPlayerState): DefaultVideoPlayerController {
                 return DefaultVideoPlayerController(
@@ -169,7 +173,8 @@ fun VideoPlayer(
                 ) {
                     if (thumbnailUrl != null) {
                         AsyncImage(
-                            imageUri = thumbnailUrl,
+                            // 封面同样可能是 http(接口下发),禁明文下会被 Sketch 当场拒绝 -> 黑封面
+                            imageUri = thumbnailUrl?.let(::upgradeImageUrlToHttps),
                             contentDescription = stringResource(id = R.string.desc_video),
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop

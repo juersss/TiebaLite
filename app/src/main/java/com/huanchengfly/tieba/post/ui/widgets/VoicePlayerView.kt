@@ -56,7 +56,9 @@ class VoicePlayerView @JvmOverloads constructor(
     private lateinit var progressBar: ProgressBar
 
     private var timer: Timer? = null
+    private var progressTask: TimerTask? = null
     private var player: Player? = null
+    private var released = false
 
     var url: String? = null
 
@@ -147,12 +149,18 @@ class VoicePlayerView @JvmOverloads constructor(
         if (isInEditMode) {
             return
         }
-        if (timer != null) {
-            timer!!.cancel()
-            timer = null
-        }
-        timer = Timer()
+        cancelProgressTask()
+        timer?.cancel()
+        // Timer 构造即起非守护线程:此前每个语音视图一进列表就建 Timer,行滚出组合时
+        // Manager.release 只回收 current,从未播放过的视图线程无人回收、随浏览无界累积。
+        // 改为惰性:真正到达 STATE_READY 需要计时再建(released 视图除外)。
+        timer = null
         player = Player(this)
+    }
+
+    private fun cancelProgressTask() {
+        progressTask?.cancel()
+        progressTask = null
     }
 
     fun setText(text: String?) {
@@ -202,11 +210,9 @@ class VoicePlayerView @JvmOverloads constructor(
         completed = false
         setState(STATE_PAUSING)
         animationView.visibility = GONE
-        if (timer != null) {
-            timer!!.cancel()
-            timer = null
-        }
-        timer = Timer()
+        cancelProgressTask()
+        timer?.cancel()
+        timer = null
     }
 
     fun startPlay() {
@@ -269,11 +275,15 @@ class VoicePlayerView @JvmOverloads constructor(
     }
 
     fun release() {
+        released = true
+        cancelProgressTask()
         if (timer != null) {
             timer!!.cancel()
             timer = null
         }
         if (player != null) {
+            // 监听摘除由包装类 release() 的 setCurrent(null) 完成;这里只需防
+            // "release 后迟到的 READY 回调打回本视图"——计时器判空跳过
             player!!.release()
             player = null
         }
@@ -328,7 +338,19 @@ class VoicePlayerView @JvmOverloads constructor(
             play()
             setState(STATE_PLAYING)
             setText(calculateTime(duration / 1000))
-            timer!!.schedule(object : TimerTask() {
+            // release() 置空后,已入队的播放状态消息仍会派发到本视图(监听器挂在外层
+            // 列表视图上):已释放的视图不得重建 Timer,静默跳过计时
+            if (released) {
+                return
+            }
+            // 每次进 READY 都先取消旧任务再排新的:此前无条件 schedule,旧任务只被
+            // completed 拦住逻辑体、任务本体永不取消,重播/重缓冲一次就多累积一个
+            // 50ms 重复任务(线程与主线程消息随之翻倍)
+            cancelProgressTask()
+            if (timer == null) {
+                timer = Timer()
+            }
+            timer?.schedule(object : TimerTask() {
                 override fun run() {
                     if (!completed) {
                         Companion.handler.post {
@@ -336,10 +358,12 @@ class VoicePlayerView @JvmOverloads constructor(
                         }
                     }
                 }
-            }, 0, 50)
+            }.also { progressTask = it }, 0, 50)
         } else if (playbackState == androidx.media3.common.Player.STATE_ENDED) {
             setState(STATE_PAUSING)
             completed = true
+            // 播完即取消任务本体,Timer 线程不再为已结束的播放空转醒来
+            cancelProgressTask()
         }
     }
 
@@ -397,9 +421,16 @@ class VoicePlayerView @JvmOverloads constructor(
 
         private fun setCurrent(current: VoicePlayerView?) {
             if (current != null) {
-                CURRENT = current
+                // 换监听前先摘旧的:所有语音视图共享同一 ExoPlayer,只加不移会让
+                // 监听器随浏览无限累积,一条语音播放触发全部历史视图各自起计时器
+                if (CURRENT != null && CURRENT != current) {
+                    mExoPlayer.removeListener(CURRENT!!)
+                }
+                if (CURRENT != current) {
+                    CURRENT = current
+                    mExoPlayer.addListener(CURRENT!!)
+                }
                 Manager.notifyPlaying(CURRENT)
-                mExoPlayer.addListener(CURRENT!!)
             } else {
                 if (CURRENT != null) mExoPlayer.removeListener(
                     CURRENT!!

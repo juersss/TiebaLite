@@ -2,13 +2,16 @@ package com.huanchengfly.tieba.post.ui.widgets.compose.video
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.common.Player.STATE_IDLE
@@ -21,6 +24,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
+import com.huanchengfly.tieba.post.R
+import com.huanchengfly.tieba.post.core.common.upgradeImageUrlToHttps
 import com.huanchengfly.tieba.post.ui.widgets.compose.video.util.FlowDebouncer
 import com.huanchengfly.tieba.post.ui.widgets.compose.video.util.set
 import kotlinx.coroutines.CoroutineScope
@@ -127,6 +132,33 @@ internal class DefaultVideoPlayerController(
                 copy(videoSize = videoSize.width.toFloat() to videoSize.height.toFloat())
             }
         }
+
+        /**
+         * 以前没有实现这个方法:任何加载/解码失败都只表现为"停在黑屏"——既没有提示,也没法重试
+         * (`play()` 会立刻把 startedPlay 置 true,UI 从封面切到播放器表面,失败后就一直黑着)。
+         * 现在:① 打日志(便于 adb logcat 定位);② 回到封面并让下次点播放能重新 prepare;
+         * ③ 把失败原因弹出来。
+         */
+        override fun onPlayerError(error: PlaybackException) {
+            Log.e(
+                "VideoPlayerController",
+                "playback failed: ${error.errorCodeName} | ${error.message} | cause=${error.cause}",
+                error
+            )
+            // prepare 失败后 exoPlayer 停在 IDLE:复位这个闸门,下次点播放会重新 prepare 一次
+            waitPlayerViewToPrepare.set(true)
+            _state.set {
+                copy(startedPlay = false, isPlaying = false, controlsVisible = true)
+            }
+            Toast.makeText(
+                context,
+                context.getString(
+                    R.string.toast_video_play_failed,
+                    error.cause?.message ?: error.errorCodeName
+                ),
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     /**
@@ -227,7 +259,9 @@ internal class DefaultVideoPlayerController(
             // Currently animating
             return
         }
-        val target = (exoPlayer.currentPosition + 10_000).coerceAtMost(exoPlayer.duration)
+        // duration 未就绪时是 C.TIME_UNSET(-1):coerceAtMost(-1) 会 seekTo(-1) 崩
+        val maxPosition = exoPlayer.duration.takeIf { it > 0 } ?: 0
+        val target = (exoPlayer.currentPosition + 10_000).coerceAtMost(maxPosition)
         exoPlayer.seekTo(target)
         updateDurationAndPosition()
         _state.set { copy(quickSeekAction = QuickSeekAction.forward()) }
@@ -332,8 +366,20 @@ internal class DefaultVideoPlayerController(
                 }
 
                 is VideoPlayerSource.Network -> {
+                    // 全局禁明文(network_security_config 的 base-config=false + manifest 兜底):
+                    // 播放地址若被接口下发成 http,请求在建立连接前就被网络策略拒掉——表现正是
+                    // "点开视频停在黑屏"(与 2026-09-14 图页整屏全黑同因)。这里与图片同一口径
+                    // 升级 https,不放宽明文白名单;已是 https 或命中白名单域名时原样返回。
+                    val playableUrl = upgradeImageUrlToHttps(source.url)
+                    // 只记 scheme/host(不记完整 URL 与签名参数):禁明文策略下 http 必失败,
+                    // 这行日志让"黑屏到底是明文被拒还是 CDN 403"一眼可辨。
+                    Log.i(
+                        "VideoPlayerController",
+                        "network source: ${Uri.parse(source.url).scheme}://${Uri.parse(source.url).host}" +
+                            " -> ${Uri.parse(playableUrl).scheme}://${Uri.parse(playableUrl).host}"
+                    )
                     ProgressiveMediaSource.Factory(dataSourceFactory)
-                        .createMediaSource(MediaItem.fromUri(source.url))
+                        .createMediaSource(MediaItem.fromUri(playableUrl))
                 }
             }
         }
@@ -377,6 +423,10 @@ internal class DefaultVideoPlayerController(
     override fun release() {
         Log.i("VideoPlayerController", "$this is release. is released $released")
         if (released.compareAndSet(false, true)) {
+            // 先取消周期性更新循环:release 置空 _exoPlayer 后,250ms 循环若还在跑,
+            // 会经 exoPlayer 惰性 getter 复活出一个无人 prepare/无人 release 的孤儿播放器
+            updateDurationAndPositionJob?.cancel()
+            updateDurationAndPositionJob = null
             exoPlayer.release()
             previewExoPlayer.release()
             _exoPlayer = null

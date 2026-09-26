@@ -3,6 +3,7 @@ package com.huanchengfly.tieba.post.utils
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.appcompat.content.res.AppCompatResources
@@ -30,11 +31,11 @@ import com.github.panpf.sketch.request.execute
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.fromJson
+import com.huanchengfly.tieba.post.core.common.fromJson
 import com.huanchengfly.tieba.post.models.EmoticonCache
 import com.huanchengfly.tieba.post.pxToDp
 import com.huanchengfly.tieba.post.pxToSp
-import com.huanchengfly.tieba.post.toJson
+import com.huanchengfly.tieba.post.core.common.toJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -261,9 +262,18 @@ object EmoticonManager {
         if (!emoticonFile.exists()) {
             return null
         }
+        // 写入端(bitmapToFile)直接写最终路径,进程被杀可能留下截断 PNG;仅查 exists()
+        // 会把解码失败的空位图 Drawable 缓存进 drawableCache,坏文件永久残留且进程内
+        // 无自愈点。解码校验失败即删坏文件回退未命中,下次 fetchEmoticons 按既有的
+        // "不存在才拉取"条件重新下载。
+        val bitmap = BitmapFactory.decodeFile(emoticonFile.absolutePath)
+        if (bitmap == null) {
+            emoticonFile.delete()
+            return null
+        }
         return BitmapDrawable(
             getContext().resources,
-            emoticonFile.inputStream()
+            bitmap
         ).also { drawableCache[id] = it }
     }
 
