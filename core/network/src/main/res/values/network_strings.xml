@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  从 app 随迁的 3 条网络错误文案（Phase 3b-move）。
+  判据：仅 api 树（ConnectivityInterceptor / ExceptionExt）使用，app 侧零引用；
+  title_/message_no_internet_connectivity 两条 UI 文案留在 app。
+  解除了 api 对 app R 的最后 2 处白名单依赖（进度交接 §8.8）。
+-->
+<resources>
+    <string name="error_unknown">未知错误</string>
+    <string name="no_internet_connectivity">无互联网连接</string>
+    <string name="connectivity_timeout">连接超时</string>
+</resources>
