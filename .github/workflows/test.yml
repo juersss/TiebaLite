@@ -1,0 +1,120 @@
+name: Unit Tests & Lint
+
+# 外部审查-7:此前唯一工作流 build.yml 仅由手动操作或 v* tag 触发,日常改动
+# 不会自动跑单测。本工作流为无需发布凭据的日常校验(push/PR),运行 JVM 单测 +
+# Android Lint(新增 Error 阻断,存量问题见 app/lint-baseline.xml),tag 发布仍走 build.yml。
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '4.0-dev'
+      - 'master'
+    tags-ignore:
+      - '**'
+  pull_request:
+
+permissions:
+  contents: read
+
+# 同一分支连续推送时取消上一轮未完成的运行:省 runner,且"结论以最新一次为准"
+# (单测工作流可安全取消;发版工作流 build.yml 刻意不加 cancel-in-progress)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      # 供应链:校验 gradle/wrapper/gradle-wrapper.jar 未被替换(与 wrapper 里声明的
+      # distributionSha256Sum 互为补充——前者保 jar、后者保发行包)
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          java-version: "17"
+          distribution: "zulu"
+
+      - name: Set up Android SDK components
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          # PR 只读缓存(不为 fork/临时分支写缓存);分支推送才回写
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Run unit tests
+        # 与本地门禁（run-tests.sh）同口径：cleanTestDebugUnitTest 防"UP-TO-DATE 一个用例都没跑"，
+        # --no-build-cache 防"cleanTest 之后测试结果被 FROM-CACHE 恢复"，两者叠加才是真跑。
+        # 任务名不带 `:app:` 前缀 → 在所有模块上聚合执行（core:common/network/database/data + app）。
+        run: ./gradlew cleanTestDebugUnitTest testDebugUnitTest --no-build-cache
+
+      # 外部审查-静态分析(第⑥项第一步):Android Lint 对基线之外的新增 Error
+      # 阻断日常校验;存量 71 Error 挂账于 app/lint-baseline.xml,清偿后可
+      # ./gradlew :app:updateLintBaseline 收缩基线
+      - name: Run Android Lint
+        run: ./gradlew lintDebug
+
+      - name: Upload test reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-reports-${{ github.run_number }}
+          # 多模块口径：结果分散在 */build/... 下（core/{common,network,database,data} 是两级路径，
+          # 写死 `app/build/...` 会漏掉四个 core 模块的报告）
+          path: |
+            **/build/reports/tests/testDebugUnitTest
+            **/build/test-results/testDebugUnitTest
+            **/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # 发版签名守卫的前置校验(外部审查-2 的 fail-closed 契约,见 app/build.gradle.kts
+  # 的 validateReleaseSigning):纯克隆/PR 环境没有 keystore.properties,此时
+  # assembleRelease 必须**失败**,绝不允许静默回落到 debug 签名。
+  # 本地因为存在 keystore.properties 走的是"有凭据"分支,这条路径只能在 CI 上验证;
+  # 补上它可把"发版当天才发现签名配错"提前到每次 push/PR。
+  release-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          java-version: "17"
+          distribution: "zulu"
+
+      - name: Set up Android SDK components
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || echo "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Assert release fails closed without signing credentials
+        run: |
+          set +e
+          ./gradlew :app:validateReleaseSigning --console=plain > guard.log 2>&1
+          rc=$?
+          set -e
+          tail -20 guard.log
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::缺少签名凭据时 validateReleaseSigning 竟然成功——fail-closed 守卫已失效(会产出 debug 签名的 release 包)"
+            exit 1
+          fi
+          echo "✅ 缺凭据时按预期失败,fail-closed 生效"

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
+
+    <issue
+        id="MissingPermission"
+        message="Missing permissions required by TelephonyManager.getDeviceId: android.permission.READ_PRIVILEGED_PHONE_STATE"
+        errorLine1="                imei = telephonyManager.getDeviceId();"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/params/MobileInfoUtil.java"
+            line="20"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="MissingPermission"
+        message="Missing permissions required by ConnectivityManager.getActiveNetworkInfo: android.permission.ACCESS_NETWORK_STATE"
+        errorLine1="            val activeNetwork = manager.activeNetworkInfo ?: return false"
+        errorLine2="                                ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/internal/NetworkState.kt"
+            line="22"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="MissingPermission"
+        message="Missing permissions required by ConnectivityManager.getActiveNetwork: android.permission.ACCESS_NETWORK_STATE"
+        errorLine1="            val network = manager.activeNetwork ?: return false"
+        errorLine2="                          ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/internal/NetworkState.kt"
+            line="25"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="MissingPermission"
+        message="Missing permissions required by ConnectivityManager.getNetworkCapabilities: android.permission.ACCESS_NETWORK_STATE"
+        errorLine1="            val capabilities = manager.getNetworkCapabilities(network) ?: return false"
+        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/internal/NetworkState.kt"
+            line="26"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 23"
+        errorLine1="        return if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.M) {"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/internal/NetworkState.kt"
+            line="21"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 23"
+        errorLine1="                if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.M) imei + androidId + uUID else &quot;com.baidu$androidId&quot;"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/params/UIDUtil.kt"
+            line="64"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `SessionProviders` which has field `installedContext` pointing to `Context`); this is a memory leak"
+        errorLine1="/**"
+        errorLine2="^">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/session/SessionProviders.kt"
+            line="34"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields; this is a memory leak"
+        errorLine1="    @Volatile"
+        errorLine2="    ^">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/session/SessionProviders.kt"
+            line="39"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ConstantLocale"
+        message="Assigning `Locale.getDefault()` to a final static field is suspicious; this code will not work correctly if the user changes locale while the app is running"
+        errorLine1="    private val timeFormat = SimpleDateFormat(&quot;HH:mm:ss&quot;, Locale.getDefault())"
+        errorLine2="                                                          ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/huanchengfly/tieba/post/api/OpResponseLog.kt"
+            line="56"
+            column="59"/>
+    </issue>
+
+</issues>
