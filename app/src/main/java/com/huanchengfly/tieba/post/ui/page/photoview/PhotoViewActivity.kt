@@ -159,11 +159,18 @@ class PhotoViewActivity : BaseComposeActivityWithParcelable<PhotoViewData>() {
                 Box(modifier = Modifier.fillMaxSize()) {
                     HorizontalPager(
                         state = pagerState,
-                        key = { "${items[it].picId}_${items[it].postId}" }
+                        // key 必须逐图唯一:楼中楼多图走本地列表时,服务端给同组图片下发的
+                        // pic_id 是同一占位值(实测为 "downloadfile")且 postId 为 null,
+                        // 旧 key "picId_postId" 会整组撞车——翻页即 IllegalArgumentException。
+                        // overallIndex:楼中楼本地列表按 1..n 赋值,pb 路径为服务端全局图序,
+                        // LoadPrev/LoadMore 合并时每个条目保有自己的 overallIndex——唯一且稳定
+                        key = { items[it].overallIndex.toString() }
                     ) {
                         val item = items[it]
                         ViewPhoto(
-                            imageUri = item.originUrl,
+                            // 图页接口下发 http 地址会被网络策略(禁明文)当场拒绝→整屏全黑,
+                            // 由 displayTarget 统一跳过空值并升级为 https,详见 ImageUrlUtil
+                            imageUri = item.displayTarget,
                             modifier = Modifier.fillMaxSize(),
                             onTap = {
                                 finish()
@@ -206,7 +213,8 @@ class PhotoViewActivity : BaseComposeActivityWithParcelable<PhotoViewData>() {
                                     toastShort(R.string.toast_preparing_share_pic)
                                     ImageUtil.download(
                                         this@PhotoViewActivity,
-                                        items[index].originUrl,
+                                        // 原图字段缺失时回落展示 URL,避免分享静默失效
+                                        items[index].downloadTarget,
                                         true
                                     ) { uri: Uri ->
                                         val chooser = Intent(Intent.ACTION_SEND).apply {
@@ -236,7 +244,8 @@ class PhotoViewActivity : BaseComposeActivityWithParcelable<PhotoViewData>() {
                                 IconButton(onClick = {
                                     ImageUtil.download(
                                         this@PhotoViewActivity,
-                                        items[index].originUrl
+                                        // 同上:图页接口的 origin 字段为空/明文都会让下载静默失败
+                                        items[index].downloadTarget
                                     )
                                 }) {
                                     Icon(

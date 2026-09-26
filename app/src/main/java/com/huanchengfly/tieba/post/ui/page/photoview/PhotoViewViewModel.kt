@@ -10,6 +10,8 @@ import com.huanchengfly.tieba.post.arch.UiIntent
 import com.huanchengfly.tieba.post.arch.UiState
 import com.huanchengfly.tieba.post.models.LoadPicPageData
 import com.huanchengfly.tieba.post.models.PhotoViewData
+import com.huanchengfly.tieba.post.core.common.resolvePhotoViewDisplayUrl
+import com.huanchengfly.tieba.post.core.common.resolvePhotoViewDownloadUrl
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -43,10 +45,15 @@ class PhotoViewViewModel :
 
         private fun List<PicPageBean.PicBean>.toPhotoViewItems(): List<PhotoViewItem> =
             map {
+                val original = it.img.original
                 PhotoViewItem(
-                    picId = it.img.original.id,
-                    originUrl = it.img.original.originalSrc,
-                    url = if (it.showOriginalBtn) it.img.original.bigCdnSrc else null,
+                    picId = original.id,
+                    // original_src 为原图地址;服务端并不保证下发(空值时逐级回落),
+                    // 且本接口下发的是 http 地址——由 displayTarget/downloadTarget 统一升 https
+                    originUrl = listOf(original.originalSrc, original.url, original.bigCdnSrc)
+                        .firstOrNull { candidate -> candidate.isNotBlank() }
+                        ?: original.originalSrc,
+                    url = if (it.showOriginalBtn) original.bigCdnSrc else null,
                     overallIndex = it.overAllIndex.toInt(),
                     postId = it.postId?.toLongOrNull()
                 )
@@ -112,6 +119,8 @@ class PhotoViewViewModel :
                                 picId = item.picId,
                                 originUrl = item.originUrl,
                                 url = if (item.showOriginBtn) item.url else null,
+                                // 楼中楼图片无 pb 图页可拉,优先展示与内联缩略图相同的 URL(快、命中缓存)
+                                displayUrl = item.url,
                                 overallIndex = index + 1,
                                 postId = item.postId
                             )
@@ -318,4 +327,20 @@ data class PhotoViewItem(
     val url: String?,
     val overallIndex: Int,
     val postId: Long? = null,
-)
+    /**
+     * 优先展示的 URL(如楼中楼图片的内联 picUrl,与缩略图同源、命中缓存)。
+     * 为空时依次回落 [originUrl]、[url]。下载/分享仍优先 [originUrl] 保证原图质量。
+     */
+    val displayUrl: String? = null,
+) {
+    /**
+     * 展示用 URL:displayUrl → originUrl → url,跳过空值并把 http 升级为 https。
+     * (图页接口下发 http 地址,明文被网络策略拦截——见 ImageUrlUtil 的说明)
+     */
+    val displayTarget: String
+        get() = resolvePhotoViewDisplayUrl(displayUrl, originUrl, url)
+
+    /** 下载/分享用 URL:优先原图 originUrl,为空时回落展示 URL(避免按钮静默失效) */
+    val downloadTarget: String
+        get() = resolvePhotoViewDownloadUrl(displayUrl, originUrl, url)
+}
