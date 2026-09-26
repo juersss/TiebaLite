@@ -489,7 +489,12 @@ fun HighlightText(
             buildAnnotatedString {
                 append(text)
                 highlightKeywords.forEach { keyword ->
-                    val regexPattern = keyword.toPattern(Pattern.CASE_INSENSITIVE)
+                    // keyword 是用户原始输入,直接当正则编译:非法正则(如"(")在组合期抛
+                    // PatternSyntaxException 即崩溃,合法正则还会把字面量当语义错配——
+                    // 转义为字面量匹配(上游 0ranko SearchRepository 同款),双保险 runCatching
+                    val regexPattern = runCatching {
+                        Regex.escape(keyword).toPattern(Pattern.CASE_INSENSITIVE)
+                    }.getOrNull() ?: return@forEach
                     val matcher = regexPattern.matcher(text.text)
                     while (matcher.find()) {
                         val start = matcher.start()
