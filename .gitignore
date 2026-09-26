@@ -46,6 +46,8 @@ captures/
 # Keystore files
 # Uncomment the following line if you do not want to check your keystore files in.
 *.jks
+# 除 .jks 外的另一种常见签名库扩展名,同样必须排除(避免误提交签名库)
+*.keystore
 
 keystore.properties
 
