@@ -62,3 +62,37 @@ fun Modifier.debounceClickable(
         lastClickTime = currentTime
     }
 }
+
+/**
+ * [combinedClickable] 的防抖版:短按走 [onClick] 且受 [delayMillis] 节流,
+ * 长按走 [onLongClick] 不受节流影响(诊断入口,与防双击的语义无关)。
+ */
+@Composable
+fun Modifier.debounceCombinedClickable(
+    delayMillis: Long = 500L,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    indication: Indication? = null,
+    enabled: Boolean = true,
+    role: Role? = null,
+): Modifier = composed {
+    var lastClickTime by remember { mutableLongStateOf(0L) }
+    combinedClickable(
+        enabled = enabled,
+        role = role,
+        interactionSource = interactionSource,
+        indication = if (System.currentTimeMillis() - lastClickTime < delayMillis)
+            null
+        else
+            indication,
+        onClick = {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastClickTime >= delayMillis) {
+                onClick()
+            }
+            lastClickTime = currentTime
+        },
+        onLongClick = onLongClick,
+    )
+}

@@ -1,13 +1,18 @@
 package com.huanchengfly.tieba.post.ui.page.main.explore.hot
 
 import androidx.compose.runtime.Stable
-import com.huanchengfly.tieba.post.api.TiebaApi
-import com.huanchengfly.tieba.post.api.models.AgreeBean
-import com.huanchengfly.tieba.post.api.models.protos.FrsTabInfo
-import com.huanchengfly.tieba.post.api.models.protos.RecommendTopicList
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.hotThreadList.HotThreadListResponse
+import com.huanchengfly.tieba.post.utils.AgreeOpRunner
+import com.huanchengfly.tieba.post.utils.ListAgreeOutcome
+import com.huanchengfly.tieba.post.App
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
+import com.huanchengfly.tieba.post.api.TiebaRateLimitedException
+import com.huanchengfly.tieba.post.core.network.model.protos.FrsTabInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.RecommendTopicList
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.hotThreadList.HotThreadListResponse
 import com.huanchengfly.tieba.post.arch.BaseViewModel
+import com.huanchengfly.tieba.post.arch.CommonUiEvent
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
 import com.huanchengfly.tieba.post.arch.PartialChange
 import com.huanchengfly.tieba.post.arch.PartialChangeProducer
@@ -21,8 +26,10 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
@@ -30,15 +37,57 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class HotViewModel @Inject constructor() :
+class HotViewModel @Inject constructor(
+    // B3 Repository/注入试点(2026-09-12):TiebaApi 对象本身就是 Hilt Module
+    // (@Provides ITiebaApi),ViewModel 直接构造注入即可获得接口,页面不再触达单例。
+    // 后续页面迁入同一模式,单测用 fake ITiebaApi 即可在纯 JVM 验证 producer 逻辑
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<HotUiIntent, HotPartialChange, HotUiState, HotUiEvent>() {
     override fun createInitialState(): HotUiState = HotUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<HotUiIntent, HotPartialChange, HotUiState> =
-        HotPartialChangeProducer
+        HotPartialChangeProducer(tiebaApi)
 
-    private object HotPartialChangeProducer :
-        PartialChangeProducer<HotUiIntent, HotPartialChange, HotUiState> {
+    override fun dispatchEvent(partialChange: HotPartialChange): UiEvent? =
+        when (partialChange) {
+            is HotPartialChange.Agree.Start -> {
+                // 乐观意图进记录表;显示数字/亮灯由 FeedCard.ThreadAgreeBtn 从 records 推导
+                AgreeOpRunner.onStartAgree(partialChange.threadId, partialChange.hasAgree)
+                null
+            }
+
+            is HotPartialChange.Agree.Failure -> {
+                // 限流拦截的请求从未 setPending,绝不回退(判定与回滚收口在 runner)
+                AgreeOpRunner.onFailureAgree(partialChange.threadId, partialChange.error)
+                // 列表页点赞失败历来静默(与帖子页 Agree 口径一致),仅限流时提示
+                if (partialChange.error is TiebaRateLimitedException)
+                    CommonUiEvent.Toast(partialChange.error.message.orEmpty())
+                else null
+            }
+
+            // 列表重载:本次返回的 agreeNum 基准已包含已确认操作,对齐标记跟进意图
+            is HotPartialChange.Load.Success -> {
+                rebaseLoaded(partialChange.threadList); null
+            }
+
+            is HotPartialChange.RefreshThreadList.Success -> {
+                rebaseLoaded(partialChange.threadList); null
+            }
+
+            else -> null
+        }
+
+    private fun rebaseLoaded(threadList: List<ThreadInfo>) {
+        AgreeOpRunner.rebaseLoaded(
+            AgreeParams.OBJ_THREAD,
+            threadList.map { it.threadId }
+        )
+    }
+
+    private class HotPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) : PartialChangeProducer<HotUiIntent, HotPartialChange, HotUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<HotUiIntent>): Flow<HotPartialChange> =
             merge(
@@ -51,7 +100,7 @@ class HotViewModel @Inject constructor() :
             )
 
         private fun produceLoadPartialChange(): Flow<HotPartialChange.Load> =
-            TiebaApi.getInstance().hotThreadListFlow("all")
+            tiebaApi.hotThreadListFlow("all")
                 .map<HotThreadListResponse, HotPartialChange.Load> {
                     HotPartialChange.Load.Success(
                         it.data_?.topicList ?: emptyList(),
@@ -63,7 +112,7 @@ class HotViewModel @Inject constructor() :
                 .catch { emit(HotPartialChange.Load.Failure(it)) }
 
         private fun HotUiIntent.RefreshThreadList.producePartialChange(): Flow<HotPartialChange.RefreshThreadList> =
-            TiebaApi.getInstance().hotThreadListFlow(tabCode)
+            tiebaApi.hotThreadListFlow(tabCode)
                 .map<HotThreadListResponse, HotPartialChange.RefreshThreadList> {
                     HotPartialChange.RefreshThreadList.Success(
                         tabCode,
@@ -74,18 +123,20 @@ class HotViewModel @Inject constructor() :
                 .catch { emit(HotPartialChange.RefreshThreadList.Failure(tabCode, it)) }
 
         private fun HotUiIntent.Agree.producePartialChange(): Flow<HotPartialChange.Agree> =
-            TiebaApi.getInstance()
-                .opAgreeFlow(
-                    threadId.toString(), postId.toString(), hasAgree, objType = 3
-                )
-                .map<AgreeBean, HotPartialChange.Agree> {
-                    HotPartialChange.Agree.Success(
-                        threadId,
-                        hasAgree xor 1
-                    )
+            // 赞踩链路统一收口在 AgreeOpRunner,本页只做中性结果 → PartialChange 的类型映射
+            AgreeOpRunner.threadAgree(threadId, postId, hasAgree, forumId)
+                .map<ListAgreeOutcome, HotPartialChange.Agree> { outcome ->
+                    when (outcome) {
+                        is ListAgreeOutcome.Started ->
+                            HotPartialChange.Agree.Start(threadId, outcome.newHasAgree)
+
+                        is ListAgreeOutcome.Accepted ->
+                            HotPartialChange.Agree.Success(threadId, hasAgree xor 1)
+
+                        is ListAgreeOutcome.Rejected ->
+                            HotPartialChange.Agree.Failure(threadId, hasAgree, outcome.error)
+                    }
                 }
-                .onStart { emit(HotPartialChange.Agree.Start(threadId, hasAgree xor 1)) }
-                .catch { emit(HotPartialChange.Agree.Failure(threadId, hasAgree, it)) }
     }
 }
 
@@ -97,7 +148,9 @@ sealed interface HotUiIntent : UiIntent {
     data class Agree(
         val threadId: Long,
         val postId: Long,
-        val hasAgree: Int
+        val hasAgree: Int,
+        // E1:opAgree 官方必带参数,从 ThreadInfo 透传;null 时不发送
+        val forumId: Long? = null,
     ) : HotUiIntent
 }
 
@@ -157,76 +210,13 @@ sealed interface HotPartialChange : PartialChange<HotUiState> {
     }
 
     sealed class Agree private constructor() : HotPartialChange {
-        private fun List<ImmutableHolder<ThreadInfo>>.updateAgreeStatus(
-            threadId: Long,
-            hasAgree: Int
-        ): ImmutableList<ImmutableHolder<ThreadInfo>> {
-            return map {
-                val threadInfo = it.get()
-                if (threadInfo.threadId == threadId) {
-                    if (threadInfo.agree != null) {
-                        if (hasAgree != threadInfo.agree.hasAgree) {
-                            if (hasAgree == 1) {
-                                threadInfo.copy(
-                                    agreeNum = threadInfo.agreeNum + 1,
-                                    agree = threadInfo.agree.copy(
-                                        agreeNum = threadInfo.agree.agreeNum + 1,
-                                        diffAgreeNum = threadInfo.agree.diffAgreeNum + 1,
-                                        hasAgree = 1
-                                    )
-                                )
-                            } else {
-                                threadInfo.copy(
-                                    agreeNum = threadInfo.agreeNum - 1,
-                                    agree = threadInfo.agree.copy(
-                                        agreeNum = threadInfo.agree.agreeNum - 1,
-                                        diffAgreeNum = threadInfo.agree.diffAgreeNum - 1,
-                                        hasAgree = 0
-                                    )
-                                )
-                            }
-                        } else {
-                            threadInfo
-                        }
-                    } else {
-                        threadInfo.copy(
-                            agreeNum = if (hasAgree == 1) threadInfo.agreeNum + 1 else threadInfo.agreeNum - 1
-                        )
-                    }
-                } else {
-                    threadInfo
-                }
-            }.wrapImmutable()
-        }
-
+        // 差分模型:显示由 FeedCard.ThreadAgreeBtn 从 OpRecordStore.records 推导,
+        // reducer 不再改写 proto 计数;记录更新全部集中在 dispatchEvent
         override fun reduce(oldState: HotUiState): HotUiState =
             when (this) {
-                is Start -> {
-                    oldState.copy(
-                        threadList = oldState.threadList.updateAgreeStatus(
-                            threadId,
-                            hasAgree
-                        )
-                    )
-                }
-
-                is Success -> {
-                    oldState.copy(
-                        threadList = oldState.threadList.updateAgreeStatus(
-                            threadId,
-                            hasAgree
-                        )
-                    )
-                }
-
-                is Failure -> {
-                    oldState.copy(
-                        threadList = oldState.threadList.updateAgreeStatus(
-                            threadId,
-                            hasAgree
-                        )
-                    )
-                }
+                is Start -> oldState
+                is Success -> oldState
+                is Failure -> oldState
             }
 
         data class Start(

@@ -2,12 +2,14 @@ package com.huanchengfly.tieba.post.ui.page.main.explore.concern
 
 import androidx.compose.runtime.Stable
 import com.huanchengfly.tieba.post.App
-import com.huanchengfly.tieba.post.api.TiebaApi
-import com.huanchengfly.tieba.post.api.models.AgreeBean
-import com.huanchengfly.tieba.post.api.models.protos.updateAgreeStatus
-import com.huanchengfly.tieba.post.api.models.protos.userLike.ConcernData
-import com.huanchengfly.tieba.post.api.models.protos.userLike.UserLikeResponse
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
+import com.huanchengfly.tieba.post.api.TiebaRateLimitedException
+import com.huanchengfly.tieba.post.core.network.model.protos.userLike.ConcernData
+import com.huanchengfly.tieba.post.core.network.model.protos.userLike.UserLikeResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
+import com.huanchengfly.tieba.post.utils.AgreeOpRunner
+import com.huanchengfly.tieba.post.utils.ListAgreeOutcome
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.CommonUiEvent
 import com.huanchengfly.tieba.post.arch.PartialChange
@@ -15,7 +17,7 @@ import com.huanchengfly.tieba.post.arch.PartialChangeProducer
 import com.huanchengfly.tieba.post.arch.UiEvent
 import com.huanchengfly.tieba.post.arch.UiIntent
 import com.huanchengfly.tieba.post.arch.UiState
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -23,7 +25,9 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -32,21 +36,57 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class ConcernViewModel @Inject constructor() :
+class ConcernViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<ConcernUiIntent, ConcernPartialChange, ConcernUiState, ConcernUiEvent>() {
     override fun createInitialState(): ConcernUiState = ConcernUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<ConcernUiIntent, ConcernPartialChange, ConcernUiState> =
-        ExplorePartialChangeProducer
+        ExplorePartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: ConcernPartialChange): UiEvent? =
         when (partialChange) {
             is ConcernPartialChange.Refresh.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
             is ConcernPartialChange.LoadMore.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
+
+            is ConcernPartialChange.Agree.Start -> {
+                // 乐观意图进记录表;显示数字/亮灯由 FeedCard.ThreadAgreeBtn 从 records 推导
+                AgreeOpRunner.onStartAgree(partialChange.threadId, partialChange.hasAgree)
+                null
+            }
+
+            is ConcernPartialChange.Agree.Failure -> {
+                // 限流拦截的请求从未 setPending,绝不回退(判定与回滚收口在 runner)
+                AgreeOpRunner.onFailureAgree(partialChange.threadId, partialChange.error)
+                // 列表页点赞失败历来静默(与帖子页 Agree 口径一致),仅限流时提示
+                if (partialChange.error is TiebaRateLimitedException)
+                    CommonUiEvent.Toast(partialChange.error.message.orEmpty())
+                else null
+            }
+
+            // 列表重载:本次返回的 agreeNum 基准已包含已确认操作,对齐标记跟进意图
+            is ConcernPartialChange.Refresh.Success -> {
+                rebaseLoaded(partialChange.data); null
+            }
+
+            is ConcernPartialChange.LoadMore.Success -> {
+                rebaseLoaded(partialChange.data); null
+            }
+
             else -> null
         }
 
-    private object ExplorePartialChangeProducer : PartialChangeProducer<ConcernUiIntent, ConcernPartialChange, ConcernUiState> {
+    private fun rebaseLoaded(data: List<ConcernData>) {
+        AgreeOpRunner.rebaseLoaded(
+            AgreeParams.OBJ_THREAD,
+            data.mapNotNull { it.threadList?.threadId }
+        )
+    }
+
+    private class ExplorePartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) : PartialChangeProducer<ConcernUiIntent, ConcernPartialChange, ConcernUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<ConcernUiIntent>): Flow<ConcernPartialChange> =
             merge(
@@ -56,9 +96,9 @@ class ConcernViewModel @Inject constructor() :
             )
 
         private fun produceRefreshPartialChange(): Flow<ConcernPartialChange.Refresh> =
-            TiebaApi.getInstance().userLikeFlow("", App.INSTANCE.appPreferences.userLikeLastRequestUnix, 1)
+            tiebaApi.userLikeFlow("", App.INSTANCE.appPreferences.userLikeLastRequestUnix.value, 1)
                 .map<UserLikeResponse, ConcernPartialChange.Refresh> {
-                    App.INSTANCE.appPreferences.userLikeLastRequestUnix = it.data_?.requestUnix ?: 0L
+                    App.INSTANCE.appPreferences.userLikeLastRequestUnix.set(it.data_?.requestUnix ?: 0L)
                     ConcernPartialChange.Refresh.Success(
                         data = it.toData(),
                         hasMore = it.data_?.hasMore == 1,
@@ -69,7 +109,7 @@ class ConcernViewModel @Inject constructor() :
                 .catch { emit(ConcernPartialChange.Refresh.Failure(it)) }
 
         private fun ConcernUiIntent.LoadMore.producePartialChange(): Flow<ConcernPartialChange.LoadMore> =
-            TiebaApi.getInstance().userLikeFlow(pageTag, App.INSTANCE.appPreferences.userLikeLastRequestUnix, 2)
+            tiebaApi.userLikeFlow(pageTag, App.INSTANCE.appPreferences.userLikeLastRequestUnix.value, 2)
                 .map<UserLikeResponse, ConcernPartialChange.LoadMore> {
                     ConcernPartialChange.LoadMore.Success(
                         data = it.toData(),
@@ -81,11 +121,20 @@ class ConcernViewModel @Inject constructor() :
                 .catch { emit(ConcernPartialChange.LoadMore.Failure(error = it)) }
 
         private fun ConcernUiIntent.Agree.producePartialChange(): Flow<ConcernPartialChange.Agree> =
-            TiebaApi.getInstance().opAgreeFlow(
-                threadId.toString(), postId.toString(), hasAgree, objType = 3
-            ).map<AgreeBean, ConcernPartialChange.Agree> { ConcernPartialChange.Agree.Success(threadId, hasAgree xor 1) }
-                .catch { emit(ConcernPartialChange.Agree.Failure(threadId, hasAgree, it)) }
-                .onStart { emit(ConcernPartialChange.Agree.Start(threadId, hasAgree xor 1)) }
+            // 赞踩链路统一收口在 AgreeOpRunner,本页只做中性结果 → PartialChange 的类型映射
+            AgreeOpRunner.threadAgree(threadId, postId, hasAgree, forumId)
+                .map<ListAgreeOutcome, ConcernPartialChange.Agree> { outcome ->
+                    when (outcome) {
+                        is ListAgreeOutcome.Started ->
+                            ConcernPartialChange.Agree.Start(threadId, outcome.newHasAgree)
+
+                        is ListAgreeOutcome.Accepted ->
+                            ConcernPartialChange.Agree.Success(threadId, hasAgree xor 1)
+
+                        is ListAgreeOutcome.Rejected ->
+                            ConcernPartialChange.Agree.Failure(threadId, hasAgree, outcome.error)
+                    }
+                }
 
         private fun UserLikeResponse.toData(): List<ConcernData> {
             return data_?.threadInfo ?: emptyList()
@@ -102,6 +151,8 @@ sealed interface ConcernUiIntent : UiIntent {
         val threadId: Long,
         val postId: Long,
         val hasAgree: Int,
+        // E1:opAgree 官方必带参数,从 ThreadInfo 透传;null 时不发送
+        val forumId: Long? = null,
     ) : ConcernUiIntent
 }
 
@@ -113,34 +164,13 @@ internal fun List<ConcernData>.distinctById(): ImmutableList<ConcernData> {
 
 sealed interface ConcernPartialChange : PartialChange<ConcernUiState> {
     sealed class Agree private constructor() : ConcernPartialChange {
-        private fun List<ConcernData>.updateAgreeStatus(
-            threadId: Long,
-            hasAgree: Int,
-        ): ImmutableList<ConcernData> {
-            return map {
-                val threadInfo = it.threadList
-                if (threadInfo == null) it
-                else it.copy(
-                    threadList = if (threadInfo.threadId == threadId) {
-                        threadInfo.updateAgreeStatus(hasAgree)
-                    } else {
-                        threadInfo
-                    }
-                )
-            }.toImmutableList()
-        }
-
+        // 差分模型:显示由 FeedCard.ThreadAgreeBtn 从 OpRecordStore.records 推导,
+        // reducer 不再改写 proto 计数;记录更新全部集中在 dispatchEvent
         override fun reduce(oldState: ConcernUiState): ConcernUiState =
             when (this) {
-                is Start -> {
-                    oldState.copy(data = oldState.data.updateAgreeStatus(threadId, hasAgree))
-                }
-                is Success -> {
-                    oldState.copy(data = oldState.data.updateAgreeStatus(threadId, hasAgree))
-                }
-                is Failure -> {
-                    oldState.copy(data = oldState.data.updateAgreeStatus(threadId, hasAgree))
-                }
+                is Start -> oldState
+                is Success -> oldState
+                is Failure -> oldState
             }
 
         data class Start(

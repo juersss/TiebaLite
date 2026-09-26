@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -65,12 +66,17 @@ import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.rememberModalBottomSheetState
 import androidx.compose.material.rememberScaffoldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -83,6 +89,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -90,6 +97,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
@@ -101,14 +109,19 @@ import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.api.TiebaApi
 import com.huanchengfly.tieba.post.api.booleanToString
-import com.huanchengfly.tieba.post.api.models.protos.PollInfo
-import com.huanchengfly.tieba.post.api.models.protos.Post
-import com.huanchengfly.tieba.post.api.models.protos.SimpleForum
-import com.huanchengfly.tieba.post.api.models.protos.SubPostList
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.User
-import com.huanchengfly.tieba.post.api.models.protos.bawuType
-import com.huanchengfly.tieba.post.api.models.protos.plainText
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
+import com.huanchengfly.tieba.post.core.network.model.protos.OpRecord
+import com.huanchengfly.tieba.post.core.network.model.protos.displayDelta
+import com.huanchengfly.tieba.post.core.network.model.protos.PollInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.Post
+import com.huanchengfly.tieba.post.core.network.model.protos.SimpleForum
+import com.huanchengfly.tieba.post.core.network.model.protos.SubPostList
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.User
+import com.huanchengfly.tieba.post.core.network.model.protos.bawuType
+import com.huanchengfly.tieba.post.ui.common.plainText
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
@@ -119,7 +132,7 @@ import com.huanchengfly.tieba.post.arch.pageViewModel
 import com.huanchengfly.tieba.post.arch.wrapImmutable
 import com.huanchengfly.tieba.post.models.ThreadHistoryInfoBean
 import com.huanchengfly.tieba.post.models.database.History
-import com.huanchengfly.tieba.post.toJson
+import com.huanchengfly.tieba.post.core.common.toJson
 import com.huanchengfly.tieba.post.toastShort
 import com.huanchengfly.tieba.post.ui.common.PbContentRender
 import com.huanchengfly.tieba.post.ui.common.PicContentRender
@@ -139,6 +152,8 @@ import com.huanchengfly.tieba.post.ui.page.destinations.ReplyPageDestination
 import com.huanchengfly.tieba.post.ui.page.destinations.SubPostsSheetPageDestination
 import com.huanchengfly.tieba.post.ui.page.destinations.ThreadPageDestination
 import com.huanchengfly.tieba.post.ui.page.destinations.UserProfilePageDestination
+import com.huanchengfly.tieba.post.ui.widgets.compose.AgreeDebugDialog
+import com.huanchengfly.tieba.post.ui.widgets.compose.AgreeDebugInfo
 import com.huanchengfly.tieba.post.ui.widgets.compose.Avatar
 import com.huanchengfly.tieba.post.ui.widgets.compose.BackNavigationIcon
 import com.huanchengfly.tieba.post.ui.widgets.compose.BlockTip
@@ -157,6 +172,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.LongClickMenu
 import com.huanchengfly.tieba.post.ui.widgets.compose.MyBackHandler
 import com.huanchengfly.tieba.post.ui.widgets.compose.MyLazyColumn
 import com.huanchengfly.tieba.post.ui.widgets.compose.MyScaffold
+import com.huanchengfly.tieba.post.ui.widgets.compose.NetworkImage
 import com.huanchengfly.tieba.post.ui.widgets.compose.OriginThreadCard
 import com.huanchengfly.tieba.post.ui.widgets.compose.PromptDialog
 import com.huanchengfly.tieba.post.ui.widgets.compose.Sizes
@@ -168,17 +184,19 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.VerticalDivider
 import com.huanchengfly.tieba.post.ui.widgets.compose.VerticalGrid
 import com.huanchengfly.tieba.post.ui.widgets.compose.buildChipInlineContent
 import com.huanchengfly.tieba.post.ui.widgets.compose.debounceClickable
+import com.huanchengfly.tieba.post.ui.widgets.compose.debounceCombinedClickable
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberDialogState
 import com.huanchengfly.tieba.post.ui.widgets.compose.rememberMenuState
 import com.huanchengfly.tieba.post.ui.widgets.compose.states.StateScreen
 import com.huanchengfly.tieba.post.utils.AccountUtil.LocalAccount
 import com.huanchengfly.tieba.post.utils.DateTimeUtils.getRelativeTimeString
 import com.huanchengfly.tieba.post.utils.HistoryUtil
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.utils.StringUtil
 import com.huanchengfly.tieba.post.utils.StringUtil.getShortNumString
 import com.huanchengfly.tieba.post.utils.TiebaUtil
 import com.huanchengfly.tieba.post.utils.Util.getIconColorByLevel
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.ramcosta.composedestinations.annotation.DeepLink
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -209,88 +227,132 @@ private fun getDescText(
     return texts.joinToString(" · ")
 }
 
+/** 赞踩按钮间数字槽位的最小宽度:容纳短数字,计数增减(含正负变化)不引起图标位移 */
+private val AGREE_COUNT_SLOT_MIN_WIDTH = 26.dp
+
+/**
+ * 赞踩按钮对(NGA 风格):数字渲染在两图标之间的固定宽度槽位并居中,
+ * 有无数字都不改变赞/踩图标的位置
+ */
 @Composable
-fun PostAgreeBtn(
+fun PostAgreeDisagreePair(
     hasAgreed: Boolean,
     agreeNum: Long,
+    hasDisagreed: Boolean,
+    onAgreeClick: () -> Unit,
+    onDisagreeClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconSize: Dp = 18.dp,
+    debugInfo: AgreeDebugInfo? = null,
+) {
+    // 调试模式:长按任一赞/踩图标弹出差分计数诊断(见 AgreeDebug)
+    val context = LocalContext.current
+    var showDebug by remember { mutableStateOf(false) }
+    val onIconLongClick: (() -> Unit)? =
+        if (debugInfo != null && context.appPreferences.debugMode.value) {
+            { showDebug = true }
+        } else {
+            null
+        }
+    // 点踩开关(设置-习惯,偏好键 show_disagree_btn):隐藏踩图标,计数与赞不受影响。
+    // 与 hideReply 同款读法:DataStore 委托为同步缓存值,下次重组生效,非实时订阅。
+    val showDisagree = context.appPreferences.showDisagreeButton.value
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PostAgreeIcon(
+            hasAgreed = hasAgreed,
+            onClick = onAgreeClick,
+            onLongClick = onIconLongClick,
+            iconSize = iconSize
+        )
+        Box(
+            modifier = Modifier.widthIn(min = AGREE_COUNT_SLOT_MIN_WIDTH),
+            contentAlignment = Alignment.Center
+        ) {
+            // agreeNum 实为 diffAgreeNum(赞-踩),可能为负,负数也要显示
+            if (agreeNum != 0L) {
+                Text(
+                    text = agreeNum.getShortNumString(),
+                    color = if (hasAgreed) ExtendedTheme.colors.accent else ExtendedTheme.colors.textSecondary,
+                    style = MaterialTheme.typography.caption,
+                    fontSize = 13.sp,
+                    maxLines = 1
+                )
+            }
+        }
+        if (showDisagree) {
+            PostDisagreeIcon(
+                hasDisagreed = hasDisagreed,
+                onClick = onDisagreeClick,
+                onLongClick = onIconLongClick,
+                iconSize = iconSize
+            )
+        }
+    }
+    if (showDebug && debugInfo != null) {
+        AgreeDebugDialog(info = debugInfo, onDismiss = { showDebug = false })
+    }
+}
+
+@Composable
+private fun PostAgreeIcon(
+    hasAgreed: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    iconSize: Dp,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val animatedColor by animateColorAsState(
         targetValue = if (hasAgreed) ExtendedTheme.colors.accent else ExtendedTheme.colors.textSecondary,
         label = "postAgreeBtnColor"
     )
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(4.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-        colors = ButtonDefaults.buttonColors(
-            backgroundColor = ExtendedTheme.colors.background,
-            contentColor = animatedColor
-        ),
+    Icon(
+        imageVector = if (hasAgreed) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
+        contentDescription = stringResource(id = R.string.title_agree),
+        tint = animatedColor,
         modifier = modifier
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                imageVector = if (hasAgreed) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                contentDescription = stringResource(id = R.string.title_agree),
-                tint = animatedColor,
-                modifier = Modifier.size(16.dp)
+            .clip(RoundedCornerShape(4.dp))
+            // 防抖:双击会从同一份旧状态算出两次相同操作,乐观计数被扣两次(如 -1→-3)
+            .debounceCombinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
             )
-            if (agreeNum > 0) {
-                Text(
-                    text = agreeNum.getShortNumString(),
-                    color = animatedColor,
-                    style = MaterialTheme.typography.caption,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
+            .padding(horizontal = 2.dp, vertical = 6.dp)
+            .size(iconSize)
+    )
 }
 
 @Composable
-private fun BottomBarAgreeBtn(
-    hasAgreed: Boolean,
-    agreeNum: Long,
+private fun PostDisagreeIcon(
+    hasDisagreed: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    iconSize: Dp,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
 ) {
-    val color = if (hasAgreed) ExtendedTheme.colors.accent else ExtendedTheme.colors.textSecondary
-    val animatedColor by animateColorAsState(color, label = "agreeBtnColor")
-
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(0),
-        contentPadding = PaddingValues(horizontal = 4.dp),
-        colors = ButtonDefaults.buttonColors(
-            backgroundColor = ExtendedTheme.colors.bottomBar,
-            contentColor = animatedColor
-        ),
+    val animatedColor by animateColorAsState(
+        targetValue = if (hasDisagreed) ExtendedTheme.colors.accent else ExtendedTheme.colors.textSecondary,
+        label = "postDisagreeBtnColor"
+    )
+    Icon(
+        imageVector = if (hasDisagreed) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
+        contentDescription = stringResource(id = R.string.title_disagree),
+        tint = animatedColor,
         modifier = modifier
-    ) {
-        Row(
-            modifier = Modifier.align(Alignment.CenterVertically),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (hasAgreed) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                contentDescription = stringResource(id = R.string.title_agree),
-                tint = animatedColor
+            .clip(RoundedCornerShape(4.dp))
+            .debounceCombinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
             )
-            if (agreeNum > 0) {
-                Text(
-                    text = agreeNum.getShortNumString(),
-                    style = MaterialTheme.typography.caption,
-                    color = animatedColor,
-                    fontSize = 12.sp
-                )
-            }
-        }
-    }
+            .padding(horizontal = 2.dp, vertical = 6.dp)
+            .size(iconSize)
+    )
 }
 
 @Composable
@@ -324,10 +386,13 @@ private fun BottomBarPlaceholder() {
             )
         }
 
-        BottomBarAgreeBtn(
+        PostAgreeDisagreePair(
             hasAgreed = false,
             agreeNum = 1,
-            onClick = {},
+            hasDisagreed = false,
+            onAgreeClick = {},
+            onDisagreeClick = {},
+            iconSize = 24.dp,
             modifier = Modifier.fillMaxHeight()
         )
 
@@ -614,11 +679,8 @@ fun ThreadPage(
     val isEmpty by remember {
         derivedStateOf { data.isEmpty() && firstPost == null }
     }
-    val enablePullRefresh by remember {
-        derivedStateOf {
-            hasPrevious || curSortType == ThreadSortType.SORT_TYPE_DESC
-        }
-    }
+    // 下拉刷新任何排序都可用:此前正序首页因 hasPrevious=false 被禁用,顶部下拉无法刷新
+    val enablePullRefresh = true
     val loadMoreEnd by remember {
         derivedStateOf {
             !hasMore && curSortType == ThreadSortType.SORT_TYPE_DESC
@@ -636,12 +698,21 @@ fun ThreadPage(
     val isCollected = remember(thread) {
         thread?.get { collectStatus != 0 } == true
     }
-    val hasThreadAgreed = remember(thread) {
-        thread?.get { agree?.hasAgree == 1 } == true
-    }
-    val threadAgreeNum = remember(thread) {
-        thread?.get { agree?.diffAgreeNum } ?: 0L
-    }
+    // 赞踩差分计数模型:我的态度与计数偏移全部来自本地记录,不依赖服务端回显
+    val opRecords by viewModel.opRecords.collectAsState()
+    val threadOpRecord = opRecords[OpRecordStore.key(AgreeParams.OBJ_THREAD, threadId)] ?: OpRecord()
+    // 点亮判定走 agreeFlag 同源口径(有记录以记录为准,无记录回退服务端回显):
+    // 加载窗口内内存表尚无该 key 时,底栏若只读记录会与信息流卡片一暗一亮。
+    // 回退值必须走官方组合判读 serverEchoOp(点亮=hasAgree&&agreeType==N)——
+    // 裸 hasAgree 是"已表态"语义,"已踩"帖在无记录窗口会被误点亮成"已赞"
+    val hasThreadEchoAgree = thread?.get { agree?.serverEchoOp() } == MyAgreeOp.AGREE
+    val hasThreadAgreed = OpRecordStore.agreeFlag(
+        AgreeParams.OBJ_THREAD,
+        threadId,
+        if (hasThreadEchoAgree) 1 else 0
+    ) == 1
+    val threadAgreeNum = (thread?.get { agree?.diffAgreeNum } ?: 0L) + threadOpRecord.displayDelta()
+    val hasThreadDisagreed = threadOpRecord.my == MyAgreeOp.DISAGREE
     val threadTitle = remember(thread) {
         thread?.get { title } ?: ""
     }
@@ -831,11 +902,13 @@ fun ThreadPage(
     val jumpToPageDialogState = rememberDialogState()
     PromptDialog(
         onConfirm = {
+            // 输入框允许为空(正则 [0-9]* 匹配空串),空串 toInt 会 NumberFormatException 崩
+            val page = it.toIntOrNull() ?: return@PromptDialog
             viewModel.send(
                 ThreadUiIntent.Load(
                     threadId = threadId,
                     forumId = forum?.get { id } ?: forumId,
-                    page = it.toInt(),
+                    page = page,
                     seeLz = isSeeLz,
                     sortType = curSortType
                 )
@@ -879,7 +952,7 @@ fun ThreadPage(
 
     var savedHistory by remember { mutableStateOf(false) }
     LaunchedEffect(threadId, threadTitle, author, lastVisibilityPostId) {
-        if ((!savedHistory || lastVisibilityPostId != 0L) && !context.appPreferences.incognitoMode) {
+        if ((!savedHistory || lastVisibilityPostId != 0L) && !context.appPreferences.incognitoMode.value) {
             runCatching {
                 if (threadTitle.isNotBlank()) {
                     HistoryUtil.saveHistory(
@@ -1128,16 +1201,31 @@ fun ThreadPage(
                 navigator.navigate(UserProfilePageDestination(it.id))
             },
             onAgree = {
-                val postHasAgreed =
-                    item.get { agree?.hasAgree == 1 }
+                // 意图判定直读 prefs 真值:异步 init 窗口内内存表未加载(R8-NEW1)
+                val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_POST, item.get { id })
                 viewModel.send(
                     ThreadUiIntent.AgreePost(
                         threadId = threadId,
                         postId = item.get { id },
-                        agree = !postHasAgreed
+                        agree = myOp != MyAgreeOp.AGREE,
+                        undoDisagree = myOp == MyAgreeOp.DISAGREE,
+                        forumId = curForumId
                     )
                 )
             },
+            onDisagree = {
+                val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_POST, item.get { id })
+                viewModel.send(
+                    ThreadUiIntent.DisagreePost(
+                        threadId = threadId,
+                        postId = item.get { id },
+                        disagree = myOp != MyAgreeOp.DISAGREE,
+                        undoAgree = myOp == MyAgreeOp.AGREE,
+                        forumId = curForumId
+                    )
+                )
+            },
+            opRecords = opRecords,
             onReplyClick = {
                 navigator.navigate(
                     ReplyPageDestination(
@@ -1175,7 +1263,11 @@ fun ThreadPage(
                             threadId = threadId,
                             postId = item.get { id },
                             subPostId = it,
-                            loadFromSubPost = false
+                            // 点具体楼中楼预览(it!=0)时带锚点打开:pb/floor 按 spid 返回目标
+                            // 所在页,ScrollToSubPosts 才定位得到(预览展示的是最新几条,通常
+                            // 不在第 1 页,恒 false 会让面板永远停在第 1 页顶部);
+                            // "查看全部 N 条回复"(传 0)保持从头加载
+                            loadFromSubPost = it != 0L
                         )
                     )
                 }
@@ -1335,13 +1427,37 @@ fun ThreadPage(
                                 thread?.get { firstPostId }.takeIf { it != 0L }
                                     ?: firstPost?.get { id }
                                     ?: 0L
-                            if (firstPostId != 0L) viewModel.send(
-                                ThreadUiIntent.AgreeThread(
-                                    threadId,
-                                    firstPostId,
-                                    !hasThreadAgreed
+                            if (firstPostId != 0L) {
+                                // 意图判定直读 prefs 真值:异步 init 窗口内内存表未加载(R8-NEW1)
+                                val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId)
+                                viewModel.send(
+                                    ThreadUiIntent.AgreeThread(
+                                        threadId,
+                                        firstPostId,
+                                        agree = myOp != MyAgreeOp.AGREE,
+                                        undoDisagree = myOp == MyAgreeOp.DISAGREE,
+                                        forumId = curForumId
+                                    )
                                 )
-                            )
+                            }
+                        },
+                        onDisagree = {
+                            val firstPostId =
+                                thread?.get { firstPostId }.takeIf { it != 0L }
+                                    ?: firstPost?.get { id }
+                                    ?: 0L
+                            if (firstPostId != 0L) {
+                                val myOp = OpRecordStore.currentMy(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId)
+                                viewModel.send(
+                                    ThreadUiIntent.DisagreeThread(
+                                        threadId,
+                                        firstPostId,
+                                        disagree = myOp != MyAgreeOp.DISAGREE,
+                                        undoAgree = myOp == MyAgreeOp.AGREE,
+                                        forumId = curForumId
+                                    )
+                                )
+                            }
                         },
                         onClickMore = {
                             if (bottomSheetState.isVisible) {
@@ -1352,6 +1468,16 @@ fun ThreadPage(
                         },
                         hasAgreed = hasThreadAgreed,
                         agreeNum = threadAgreeNum,
+                        hasDisagreed = hasThreadDisagreed,
+                        debugInfo = AgreeDebugInfo(
+                            objType = AgreeParams.OBJ_THREAD,
+                            objId = threadId,
+                            serverAgree = thread?.get { agree },
+                            record = threadOpRecord,
+                            hasRecord = opRecords.containsKey(
+                                OpRecordStore.key(AgreeParams.OBJ_THREAD, threadId)
+                            ),
+                        ),
                         modifier = Modifier
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
@@ -1594,12 +1720,17 @@ fun ThreadPage(
                                                                 .clip(RoundedCornerShape(6.dp))
                                                                 .background(ExtendedTheme.colors.floorCard)
                                                                 .debounceClickable(onClick = {
-                                                                    navigator.navigate(
-                                                                        ThreadPageDestination(
-                                                                            threadId = it.get { tid.toLong() },
-                                                                            forumId = it.get { fid },
+                                                                    // tid 空(原帖已删)时跳过导航:
+                                                                    // 降级 0 会进一个必失败的死页
+                                                                    val originTid = it.get { tid.toLongOrNull() }
+                                                                    if (originTid != null && originTid != 0L) {
+                                                                        navigator.navigate(
+                                                                            ThreadPageDestination(
+                                                                                threadId = originTid,
+                                                                                forumId = it.get { fid },
+                                                                            )
                                                                         )
-                                                                    )
+                                                                    }
                                                                 })
                                                                 .padding(16.dp)
                                                         )
@@ -1924,10 +2055,13 @@ private fun BottomBar(
     user: ImmutableHolder<User>,
     onClickReply: () -> Unit,
     onAgree: () -> Unit,
+    onDisagree: () -> Unit,
     onClickMore: () -> Unit,
     modifier: Modifier = Modifier,
     hasAgreed: Boolean = false,
     agreeNum: Long = 0,
+    hasDisagreed: Boolean = false,
+    debugInfo: AgreeDebugInfo? = null,
 ) {
     Column(
         modifier = Modifier.background(ExtendedTheme.colors.threadBottomBar)
@@ -1940,7 +2074,7 @@ private fun BottomBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (user.get { is_login } == 1 && !LocalContext.current.appPreferences.hideReply) {
+            if (user.get { is_login } == 1 && !LocalContext.current.appPreferences.hideReply.value) {
                 Avatar(
                     data = StringUtil.getAvatarUrl(user.get { portrait }),
                     size = Sizes.Tiny,
@@ -1972,10 +2106,14 @@ private fun BottomBar(
                 )
             }
 
-            BottomBarAgreeBtn(
+            PostAgreeDisagreePair(
                 hasAgreed = hasAgreed,
                 agreeNum = agreeNum,
-                onClick = onAgree,
+                hasDisagreed = hasDisagreed,
+                onAgreeClick = onAgree,
+                onDisagreeClick = onDisagree,
+                iconSize = 24.dp,
+                debugInfo = debugInfo,
                 modifier = Modifier.fillMaxHeight()
             )
 
@@ -1996,7 +2134,7 @@ private fun BottomBar(
 
         Box(
             modifier = Modifier
-                .requiredHeightIn(min = if (LocalContext.current.appPreferences.liftUpBottomBar) 16.dp else 0.dp)
+                .requiredHeightIn(min = if (LocalContext.current.appPreferences.liftUpBottomBar.value) 16.dp else 0.dp)
         ) {
             Spacer(
                 modifier = Modifier
@@ -2019,6 +2157,9 @@ fun PostCard(
     showSubPosts: Boolean = true,
     onUserClick: (User) -> Unit = {},
     onAgree: () -> Unit = {},
+    onDisagree: () -> Unit = {},
+    opRecords: Map<String, OpRecord> = emptyMap(),
+    opOverride: OpRecord? = null,
     onReplyClick: (Post) -> Unit = {},
     onSubPostReplyClick: ((Post, SubPostList) -> Unit)? = null,
     onOpenSubPosts: (subPostId: Long) -> Unit = {},
@@ -2035,16 +2176,19 @@ fun PostCard(
         postHolder.get { floor > 1 } && !immersiveMode
     }
     val paddingModifier = Modifier.padding(start = if (hasPadding) Sizes.Small + 8.dp else 0.dp)
-    val author = postHolder.get { author!! }
+    // author 是可空 message 字段(作者注销/楼层被删时缺失):`!!` 会在组合期崩整个帖子页,
+    // 降级为空 User(字段全默认值),用户名/头像按空值展示
+    val author = postHolder.get { author ?: User() }
     val showTitle = remember(postHolder) {
         post.title.isNotBlank() && post.floor <= 1 && post.is_ntitle != 1
     }
-    val hasAgreed = remember(postHolder) {
-        post.agree?.hasAgree == 1
-    }
-    val agreeNum = remember(postHolder) {
-        post.agree?.diffAgreeNum ?: 0L
-    }
+    // 赞踩差分计数模型:本地记录优先,服务端回显只提供计数基准
+    val postOpRecord = opOverride
+        ?: opRecords[OpRecordStore.key(AgreeParams.OBJ_POST, post.id)]
+        ?: OpRecord()
+    val hasAgreed = postOpRecord.my == MyAgreeOp.AGREE
+    val agreeNum = (post.agree?.diffAgreeNum ?: 0L) + postOpRecord.displayDelta()
+    val hasDisagreed = postOpRecord.my == MyAgreeOp.DISAGREE
     val menuState = rememberMenuState()
     BlockableContent(
         blocked = blocked,
@@ -2055,7 +2199,7 @@ fun PostCard(
                 )
             }
         },
-        hideBlockedContent = context.appPreferences.hideBlockedContent || immersiveMode,
+        hideBlockedContent = context.appPreferences.hideBlockedContent.value || immersiveMode,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp, horizontal = 16.dp)
@@ -2065,7 +2209,7 @@ fun PostCard(
             indication = null,
             onClick = {
                 onReplyClick(post)
-            }.takeIf { !context.appPreferences.hideReply && account != null },
+            }.takeIf { !context.appPreferences.hideReply.value && account != null },
             menuContent = {
                 if (onMenuCopyClick != null) {
                     DropdownMenuItem(
@@ -2080,7 +2224,7 @@ fun PostCard(
                     }
                 }
                 if (account != null) {
-                    if (!context.appPreferences.hideReply) {
+                    if (!context.appPreferences.hideReply.value) {
                         DropdownMenuItem(
                             onClick = {
                                 onReplyClick(post)
@@ -2114,7 +2258,7 @@ fun PostCard(
                             }
                         }
                     }
-                    if ((canDelete(post) || threadAuthorId == account.uid.toLong()) && onMenuDeleteClick != null) {
+                    if ((canDelete(post) || threadAuthorId == account.uid.toLongOrNull()) && onMenuDeleteClick != null) {
                         DropdownMenuItem(
                             onClick = {
                                 onMenuDeleteClick(post)
@@ -2146,7 +2290,9 @@ fun PostCard(
                                         author.nameShow
                                     ),
                                     userLevel = author.level_id,
-                                    isLz = author.id == threadAuthorId,
+                                    // threadAuthorId 的 0 是"主楼作者缺失"的降级哨兵,
+                                    // 空作者楼层(User().id==0)不得借此误挂楼主角标
+                                    isLz = threadAuthorId != 0L && author.id == threadAuthorId,
                                     bawuType = author.bawuType,
                                 )
                             },
@@ -2160,14 +2306,28 @@ fun PostCard(
                                 )
                             },
                             onClick = {
-                                onUserClick(author)
+                                // 空作者降级的 User().id==0:跳 Profile(0) 是必失败死页
+                                if (author.id != 0L) {
+                                    onUserClick(author)
+                                }
                             }
                         ) {
                             if (post.floor > 1) {
-                                PostAgreeBtn(
+                                PostAgreeDisagreePair(
                                     hasAgreed = hasAgreed,
                                     agreeNum = agreeNum,
-                                    onClick = onAgree
+                                    hasDisagreed = hasDisagreed,
+                                    onAgreeClick = onAgree,
+                                    onDisagreeClick = onDisagree,
+                                    debugInfo = AgreeDebugInfo(
+                                        objType = AgreeParams.OBJ_POST,
+                                        objId = post.id,
+                                        serverAgree = post.agree,
+                                        record = postOpRecord,
+                                        hasRecord = opRecords.containsKey(
+                                            OpRecordStore.key(AgreeParams.OBJ_POST, post.id)
+                                        ),
+                                    )
                                 )
                             }
                         }
@@ -2243,6 +2403,7 @@ fun PostCard(
                                     SubPostItem(
                                         subPostList = item.subPost,
                                         subPostContent = item.subPostContent,
+                                        contentRenders = item.contentRenders,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 12.dp),
@@ -2286,6 +2447,7 @@ private fun SubPostItem(
     subPostList: ImmutableHolder<SubPostList>,
     subPostContent: AnnotatedString,
     modifier: Modifier = Modifier,
+    contentRenders: ImmutableList<PbContentRender> = persistentListOf(),
     onReplyClick: ((SubPostList) -> Unit)?,
     onOpenSubPosts: (Long) -> Unit,
     onMenuCopyClick: ((SubPostList) -> Unit)?,
@@ -2308,7 +2470,7 @@ private fun SubPostItem(
                 }
             }
             if (LocalAccount.current != null) {
-                if (!context.appPreferences.hideReply) {
+                if (!context.appPreferences.hideReply.value) {
                     DropdownMenuItem(
                         onClick = {
                             onReplyClick?.invoke(subPostList.get())
@@ -2340,22 +2502,57 @@ private fun SubPostItem(
         }
     ) {
         ProvideTextStyle(value = MaterialTheme.typography.body2.copy(color = ExtendedTheme.colors.text)) {
-            PbContentText(
-                text = subPostContent,
+            val picRenders = remember(contentRenders) {
+                contentRenders.filterIsInstance<PicContentRender>()
+            }
+            Row(
                 modifier = modifier,
-                fontSize = 13.sp,
-                emoticonSize = 0.9f,
-                overflow = TextOverflow.Ellipsis,
-                maxLines = 4,
-                lineSpacing = 0.4.sp,
-                inlineContent = mapOf(
-                    "Lz" to buildChipInlineContent(
-                        stringResource(id = R.string.tip_lz),
-                        backgroundColor = ExtendedTheme.colors.textSecondary.copy(alpha = 0.1f),
-                        color = ExtendedTheme.colors.textSecondary
-                    ),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                PbContentText(
+                    text = subPostContent,
+                    modifier = Modifier.weight(1f),
+                    fontSize = 13.sp,
+                    emoticonSize = 0.9f,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = if (picRenders.isEmpty()) 4 else 3,
+                    lineSpacing = 0.4.sp,
+                    inlineContent = mapOf(
+                        "Lz" to buildChipInlineContent(
+                            stringResource(id = R.string.tip_lz),
+                            backgroundColor = ExtendedTheme.colors.textSecondary.copy(alpha = 0.1f),
+                            color = ExtendedTheme.colors.textSecondary
+                        ),
+                    )
                 )
-            )
+                picRenders.firstOrNull()?.let { pic ->
+                    Box(modifier = Modifier.padding(start = 8.dp)) {
+                        NetworkImage(
+                            imageUri = pic.picUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(context.appPreferences.radius.value.dp)),
+                            photoViewData = pic.photoViewData,
+                            contentScale = ContentScale.Crop
+                        )
+                        if (picRenders.size > 1) {
+                            Text(
+                                text = stringResource(
+                                    id = R.string.tip_sub_post_pic_count,
+                                    picRenders.size
+                                ),
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

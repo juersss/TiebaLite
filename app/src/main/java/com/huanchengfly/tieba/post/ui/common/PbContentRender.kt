@@ -54,7 +54,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.EmoticonText
 import com.huanchengfly.tieba.post.ui.widgets.compose.NetworkImage
 import com.huanchengfly.tieba.post.ui.widgets.compose.VoicePlayer
 import com.huanchengfly.tieba.post.utils.EmoticonUtil.emoticonString
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.launchUrl
 
 @Stable
@@ -146,9 +146,11 @@ data class PicContentRender(
             contentDescription = stringResource(id = R.string.desc_image),
             modifier = Modifier
                 .focusable()
-                .clip(RoundedCornerShape(context.appPreferences.radius.dp))
+                .clip(RoundedCornerShape(context.appPreferences.radius.value.dp))
                 .fillMaxWidth(widthFraction)
-                .aspectRatio(width * 1f / height),
+                // bsize="0,0"(服务端占位图)时 0/0=NaN,组合期测量直接崩;
+                // 与 FullWidthRender 的守卫同口径
+                .aspectRatio(if (width > 0 && height > 0) width * 1f / height else 1f),
             photoViewData = photoViewData,
             contentScale = ContentScale.Crop
         )
@@ -162,7 +164,7 @@ data class PicContentRender(
             contentDescription = stringResource(id = R.string.desc_image),
             modifier = Modifier
                 .focusable()
-                .clip(RoundedCornerShape(context.appPreferences.radius.dp))
+                .clip(RoundedCornerShape(context.appPreferences.radius.value.dp))
                 .fillMaxWidth()
                 .aspectRatio(
                     if (width > 0 && height > 0) width * 1f / height
@@ -213,9 +215,9 @@ data class VideoContentRender(
 
         if (picUrl.isNotBlank()) {
             val picModifier = Modifier
-                .clip(RoundedCornerShape(context.appPreferences.radius.dp))
+                .clip(RoundedCornerShape(context.appPreferences.radius.value.dp))
                 .fillMaxWidth(widthFraction)
-                .aspectRatio(width * 1f / height)
+                .aspectRatio(if (width > 0 && height > 0) width * 1f / height else 1f)
 
             if (videoUrl.isNotBlank()) {
                 Box(
@@ -401,8 +403,11 @@ fun PbContentText(
                             }
 
                             "user" -> {
-                                val uid = annotation.item.toLong()
-                                navigator.navigate(UserProfilePageDestination(uid))
+                                // uid<=0 不是合法资料页(搜索响应缺 user_id 时回退默认 "0",
+                                // 见 SearchThreadBean.User.userId);非数字同样不跳转而非崩溃
+                                annotation.item.toLongOrNull()?.takeIf { it > 0 }?.let { uid ->
+                                    navigator.navigate(UserProfilePageDestination(uid))
+                                }
                             }
                         }
                     }

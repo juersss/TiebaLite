@@ -29,7 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.huanchengfly.tieba.post.BuildConfig
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.dataStore
+import com.huanchengfly.tieba.post.core.data.dataStore
 import com.huanchengfly.tieba.post.ui.common.prefs.PrefsScreen
 import com.huanchengfly.tieba.post.ui.common.prefs.dependNot
 import com.huanchengfly.tieba.post.ui.common.prefs.widgets.SwitchPref
@@ -43,7 +43,7 @@ import com.huanchengfly.tieba.post.ui.widgets.compose.MyScaffold
 import com.huanchengfly.tieba.post.ui.widgets.compose.Sizes
 import com.huanchengfly.tieba.post.ui.widgets.compose.TitleCentredToolbar
 import com.huanchengfly.tieba.post.utils.ImageCacheUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.launch
@@ -87,7 +87,7 @@ fun MoreSettingsPage(
                 .padding(paddingValues)
                 .fillMaxSize(),
         ) {
-            if (context.appPreferences.showExperimentalFeatures) {
+            if (context.appPreferences.showExperimentalFeatures.value) {
                 prefsItem {
                     SwitchPref(
                         leadingIcon = {
@@ -105,6 +105,23 @@ fun MoreSettingsPage(
                         summary = stringResource(id = R.string.tip_check_ci_update)
                     )
                 }
+            }
+            prefsItem {
+                SwitchPref(
+                    leadingIcon = {
+                        LeadingIcon {
+                            AvatarIcon(
+                                icon = Icons.Outlined.BugReport,
+                                size = Sizes.Small,
+                                contentDescription = null,
+                            )
+                        }
+                    },
+                    key = "debug_mode",
+                    title = stringResource(id = R.string.settings_debug_mode),
+                    defaultChecked = false,
+                    summary = stringResource(id = R.string.tip_debug_mode)
+                )
             }
             prefsItem {
                 SwitchPref(

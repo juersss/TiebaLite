@@ -35,10 +35,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.protos.FrsTabInfo
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.User
-import com.huanchengfly.tieba.post.api.models.protos.abstractText
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.core.network.model.protos.FrsTabInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.User
+import com.huanchengfly.tieba.post.ui.common.abstractText
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
 import com.huanchengfly.tieba.post.arch.BaseComposeActivity.Companion.LocalWindowSizeClass
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
 import com.huanchengfly.tieba.post.arch.onEvent
@@ -145,6 +149,8 @@ fun GeneralTabListPage(
                         threadId = it.threadId,
                         postId = it.postId,
                         hasAgree = it.hasAgree,
+                        // E1:重试与首发同参,forum_id 经事件还原
+                        forumId = it.forumId,
                     )
                 )
             }
@@ -235,7 +241,12 @@ fun GeneralTabListPage(
                             GeneralTabListUiIntent.Agree(
                                 threadId = threadInfo.id,
                                 postId = threadInfo.firstPostId,
-                                hasAgree = threadInfo.agree?.hasAgree ?: 0,
+                                hasAgree = OpRecordStore.agreeFlag(
+                                    AgreeParams.OBJ_THREAD, threadInfo.id,
+                                    if (threadInfo.agree?.serverEchoOp() == MyAgreeOp.AGREE) 1 else 0
+                                ),
+                                // E1:opAgree 官方必带 forum_id
+                                forumId = threadInfo.forumId,
                             )
                         )
                     },
@@ -309,9 +320,11 @@ private fun ThreadList(
     ) {
         itemsIndexed(
             items = items,
-            key = { index, (holder) ->
+            // key 必须与位置无关:带上 index 后,任何一次刷新/替换都会让全部 key 失效,
+            // LazyColumn 的滚动锚点随之丢失(刷新后跳回顶部)。id 在 distinctById 后唯一
+            key = { _, (holder) ->
                 val (item) = holder
-                "${index}_${item.id}"
+                item.id
             },
             contentType = { _, (holder) ->
                 val (item) = holder

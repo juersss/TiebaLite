@@ -2,11 +2,13 @@ package com.huanchengfly.tieba.post.arch
 
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import com.huanchengfly.tieba.post.utils.PickMediasRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -89,8 +91,15 @@ inline fun <reified Event : UiEvent> CoroutineScope.onGlobalEvent(
             }
             .cancellable()
             .collect {
-                Log.i("GlobalEvent", "onGlobalEvent: $it")
-                listener(it)
+                // 单个 listener 失败不得终结全局事件收集(此后该事件对所有页面静默丢失);
+                // CancellationException 必须重抛,否则 scope.cancel 停不掉收集
+                try {
+                    listener(it)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
     }
 }
@@ -101,8 +110,18 @@ inline fun <reified Event : UiEvent> onGlobalEvent(
     noinline filter: (Event) -> Boolean = { true },
     noinline listener: suspend (Event) -> Unit,
 ) {
-    DisposableEffect(filter, listener) {
-        val job = coroutineScope.onGlobalEvent(filter, listener)
+    // filter/listener 的 lambda 身份随捕获值(如页面的 data 状态)变化会让 DisposableEffect
+    // 反复 dispose/重注册,replay=0 的全局事件在间隙被 DROP_OLDEST 吞掉(R7-F3);
+    // 注册只随 scope 生命周期建立一次,包装闭包捕获 State 委托、调用时取最新闭包
+    val currentFilter by rememberUpdatedState(filter)
+    val currentListener by rememberUpdatedState(listener)
+    val registeredFilter: (Event) -> Boolean = { currentFilter(it) }
+    val registeredListener: suspend (Event) -> Unit = { currentListener(it) }
+    DisposableEffect(coroutineScope) {
+        val job = coroutineScope.onGlobalEvent(
+            filter = registeredFilter,
+            listener = registeredListener
+        )
         onDispose {
             job.cancel()
         }

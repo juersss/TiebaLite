@@ -83,7 +83,7 @@ import com.eygraber.compose.placeholder.PlaceholderHighlight
 import com.eygraber.compose.placeholder.material.fade
 import com.eygraber.compose.placeholder.material.placeholder
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.protos.frsPage.ForumInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.frsPage.ForumInfo
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
@@ -92,8 +92,8 @@ import com.huanchengfly.tieba.post.arch.emitGlobalEventSuspend
 import com.huanchengfly.tieba.post.arch.onEvent
 import com.huanchengfly.tieba.post.arch.onGlobalEvent
 import com.huanchengfly.tieba.post.arch.pageViewModel
-import com.huanchengfly.tieba.post.dataStore
-import com.huanchengfly.tieba.post.getInt
+import com.huanchengfly.tieba.post.core.data.dataStore
+import com.huanchengfly.tieba.post.core.data.getInt
 import com.huanchengfly.tieba.post.models.ForumHistoryExtra
 import com.huanchengfly.tieba.post.models.database.History
 import com.huanchengfly.tieba.post.toastShort
@@ -133,7 +133,7 @@ import com.huanchengfly.tieba.post.utils.AccountUtil.LocalAccount
 import com.huanchengfly.tieba.post.utils.HistoryUtil
 import com.huanchengfly.tieba.post.utils.StringUtil.getShortNumString
 import com.huanchengfly.tieba.post.utils.TiebaUtil
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.requestPinShortcut
 import com.ramcosta.composedestinations.annotation.DeepLink
 import com.ramcosta.composedestinations.annotation.Destination
@@ -154,7 +154,7 @@ fun getSortType(
     context: Context,
     forumName: String,
 ): Int {
-    val defaultSortType = context.appPreferences.defaultSortType?.toIntOrNull() ?: 0
+    val defaultSortType = context.appPreferences.defaultSortType.value?.toIntOrNull() ?: 0
     return context.dataStore.getInt("${forumName}_sort_type", defaultSortType)
 }
 
@@ -304,7 +304,7 @@ private fun ForumHeader(
                         forum.is_like != 1 -> stringResource(id = R.string.button_follow)
                         forum.sign_in_info?.user_info?.is_sign_in == 1 -> stringResource(
                             id = R.string.button_signed_in,
-                            forum.sign_in_info.user_info.cont_sign_num
+                            forum.sign_in_info!!.user_info!!.cont_sign_num
                         )
 
                         else -> stringResource(id = R.string.button_sign_in)
@@ -468,6 +468,7 @@ fun ForumPage(
 
     val currentListState = if (currentPage == 0) latestListState else goodListState
 
+
     val coroutineScope = rememberCoroutineScope()
 
     val density = LocalDensity.current
@@ -504,7 +505,7 @@ fun ForumPage(
     val unlikeDialogState = rememberDialogState()
 
     LaunchedEffect(forumInfo) {
-        if (forumInfo != null && !context.appPreferences.incognitoMode) {
+        if (forumInfo != null && !context.appPreferences.incognitoMode.value) {
             val (forum) = forumInfo as ImmutableHolder<ForumInfo>
             HistoryUtil.saveHistory(
                 History(
@@ -661,10 +662,10 @@ fun ForumPage(
                     )
                 },
                 floatingActionButton = {
-                    if (context.appPreferences.forumFabFunction != "hide" || (context.appPreferences.hideReply == true && context.appPreferences.forumFabFunction == "post")) {
+                    if (context.appPreferences.forumFabFunction.value != "hide" || (context.appPreferences.hideReply.value == true && context.appPreferences.forumFabFunction.value == "post")) {
                         FloatingActionButton(
                             onClick = {
-                                when (context.appPreferences.forumFabFunction) {
+                                when (context.appPreferences.forumFabFunction.value) {
                                     "refresh" -> {
                                         coroutineScope.launch {
                                             if (currentPage >= 2) {
@@ -682,11 +683,19 @@ fun ForumPage(
                                                         getSortType(
                                                             context,
                                                             forumName
-                                                        )
+                                                        ),
+                                                        preserveList = true
                                                     )
                                                 )
                                             }
                                         }
+                                        // 同下拉刷新:FAB 刷新一并重拉吧头(签到状态等)
+                                        viewModel.send(
+                                            ForumUiIntent.Load(
+                                                forumName,
+                                                getSortType(context, forumName)
+                                            )
+                                        )
                                     }
 
                                     "back_to_top" -> {
@@ -717,7 +726,7 @@ fun ForumPage(
                             modifier = Modifier.navigationBarsPadding()
                         ) {
                             Icon(
-                                imageVector = when (context.appPreferences.forumFabFunction) {
+                                imageVector = when (context.appPreferences.forumFabFunction.value) {
                                     "refresh" -> Icons.Rounded.Refresh
                                     "back_to_top" -> Icons.Rounded.VerticalAlignTop
                                     else -> Icons.Rounded.Add
@@ -746,8 +755,14 @@ fun ForumPage(
                                 getSortType(
                                     context,
                                     forumName
-                                )
+                                ),
+                                preserveList = true
                             )
+                        )
+                        // 吧头信息(签到状态/等级经验/tbs)随下拉刷新一并重拉:
+                        // 签到后下拉即可看到"已签到",无需退吧重进(09-06 用户需求)
+                        viewModel.send(
+                            ForumUiIntent.Load(forumName, getSortType(context, forumName))
                         )
                         isFakeLoading = true
                     }

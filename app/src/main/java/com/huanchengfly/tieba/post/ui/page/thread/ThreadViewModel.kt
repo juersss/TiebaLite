@@ -5,22 +5,34 @@ import androidx.compose.runtime.Stable
 import androidx.compose.ui.text.AnnotatedString
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.AgreeRateLimiter
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
+import com.huanchengfly.tieba.post.api.TiebaRateLimitedException
 import com.huanchengfly.tieba.post.api.models.AgreeBean
 import com.huanchengfly.tieba.post.api.models.CommonResponse
-import com.huanchengfly.tieba.post.api.models.protos.Anti
-import com.huanchengfly.tieba.post.api.models.protos.Post
-import com.huanchengfly.tieba.post.api.models.protos.SimpleForum
-import com.huanchengfly.tieba.post.api.models.protos.SubPostList
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.User
-import com.huanchengfly.tieba.post.api.models.protos.addPollPost.AddPollPostReponse
-import com.huanchengfly.tieba.post.api.models.protos.contentRenders
-import com.huanchengfly.tieba.post.api.models.protos.pbPage.PbPageResponse
-import com.huanchengfly.tieba.post.api.models.protos.renders
-import com.huanchengfly.tieba.post.api.models.protos.subPosts
-import com.huanchengfly.tieba.post.api.models.protos.updateAgreeStatus
-import com.huanchengfly.tieba.post.api.models.protos.updateCollectStatus
+import com.huanchengfly.tieba.post.core.network.model.protos.Anti
+import com.huanchengfly.tieba.post.core.network.model.protos.serverOpFromErrorMessage
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.OpRecord
+import com.huanchengfly.tieba.post.core.network.model.protos.Agree
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
+import com.huanchengfly.tieba.post.core.network.model.protos.OpAgreeResult
+import com.huanchengfly.tieba.post.core.network.model.protos.serverOpFromErrorCode
+import com.huanchengfly.tieba.post.core.network.model.protos.toOpAgreeResult
+import com.huanchengfly.tieba.post.core.network.model.protos.Post
+import com.huanchengfly.tieba.post.core.network.model.protos.SimpleForum
+import com.huanchengfly.tieba.post.core.network.model.protos.SubPostList
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.User
+import com.huanchengfly.tieba.post.core.network.model.protos.addPollPost.AddPollPostReponse
+import com.huanchengfly.tieba.post.ui.common.contentRenders
+import com.huanchengfly.tieba.post.core.network.model.protos.pbPage.PbPageResponse
+import com.huanchengfly.tieba.post.ui.common.renders
+import com.huanchengfly.tieba.post.ui.common.subPosts
+import com.huanchengfly.tieba.post.core.network.model.protos.updateCollectStatus
+import com.huanchengfly.tieba.post.core.network.model.protos.withForumFallback
+import com.huanchengfly.tieba.post.utils.OpRecordStore
 import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaUnknownException
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorCode
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
@@ -45,11 +57,15 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 
@@ -69,46 +85,253 @@ private fun ThreadInfo.getNextPagePostId(
 
 @Stable
 @HiltViewModel
-class ThreadViewModel @Inject constructor() :
+class ThreadViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<ThreadUiIntent, ThreadPartialChange, ThreadUiState, ThreadUiEvent>() {
     override fun createInitialState(): ThreadUiState = ThreadUiState()
 
+    // 赞踩差分计数模型的记录表(进程级单例,与楼中楼详情页共享)
+    init {
+        OpRecordStore.init(App.INSTANCE)
+    }
+
+    val opRecords: StateFlow<Map<String, OpRecord>> get() = OpRecordStore.records
+
+    private fun updateOpRecord(objType: Int, id: Long, transform: (OpRecord) -> OpRecord) =
+        OpRecordStore.update(App.INSTANCE, objType, id, transform)
+
+    /**
+     * 为**本次重载涉及**的对象(主帖 + 本页楼层)按服务端回显批量播种初始记录
+     * (历史点赞/其他端的点赞恢复)。已有记录的对象一律跳过——本地记录此后为准;
+     * 无态度的对象不写记录。整页只写一次 prefs、只发射一次状态流
+     * (逐条 confirm 会让 30 楼变成 30 轮写盘 + 全卡片失效)。
+     */
+    private fun seedFromPage(threadInfo: ThreadInfo, posts: List<PostItemData>) {
+        val seeds = HashMap<String, MyAgreeOp>(posts.size + 1)
+        threadInfo.agree.serverEchoOp().let { op ->
+            if (op != MyAgreeOp.NONE) seeds[OpRecordStore.key(AgreeParams.OBJ_THREAD, threadInfo.id)] = op
+        }
+        seeds.putAll(postSeeds(posts))
+        OpRecordStore.seedMissing(App.INSTANCE, seeds)
+    }
+
+    private fun seedFromPosts(posts: List<PostItemData>) {
+        OpRecordStore.seedMissing(App.INSTANCE, postSeeds(posts))
+    }
+
+    private fun postSeeds(posts: List<PostItemData>): Map<String, MyAgreeOp> {
+        val seeds = HashMap<String, MyAgreeOp>(posts.size)
+        posts.forEach { item ->
+            val op = item.post.get { agree }.serverEchoOp()
+            if (op != MyAgreeOp.NONE) {
+                seeds[OpRecordStore.key(AgreeParams.OBJ_POST, item.post.get { id })] = op
+            }
+        }
+        return seeds
+    }
+
+    /**
+     * 数据重载后只对齐**本次重载实际涉及**的对象(主帖 + 本页楼层)。
+     *
+     * 不能用全表无差别对齐:会把基准从未重载的历史对象
+     * 也一并对齐,造成两类问题——
+     * ① 在途请求随后失败时 `revertPending` 变成空操作(`my` 已等于 `server`),计数永久偏移;
+     * ② 跨对象污染:在 A 帖点赞后进 B 帖翻页,A 的记录被对齐但基准没更新,
+     *    出现"图标亮着但计数对不上"。
+     */
+    private fun rebaseLoaded(threadInfo: ThreadInfo, posts: List<PostItemData>) {
+        val keys = HashSet<String>(posts.size + 1)
+        keys.add(OpRecordStore.key(AgreeParams.OBJ_THREAD, threadInfo.id))
+        keys.addAll(postKeys(posts))
+        OpRecordStore.rebase(App.INSTANCE, keys)
+    }
+
+    private fun rebaseLoadedPosts(posts: List<PostItemData>) {
+        OpRecordStore.rebase(App.INSTANCE, postKeys(posts))
+    }
+
+    private fun postKeys(posts: List<PostItemData>): Set<String> {
+        val keys = HashSet<String>(posts.size)
+        posts.forEach { item ->
+            keys.add(OpRecordStore.key(AgreeParams.OBJ_POST, item.post.get { id }))
+        }
+        return keys
+    }
+
     override fun createPartialChangeProducer(): PartialChangeProducer<ThreadUiIntent, ThreadPartialChange, ThreadUiState> =
-        ThreadPartialChangeProducer
+        ThreadPartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: ThreadPartialChange): UiEvent? {
         return when (partialChange) {
-            is ThreadPartialChange.Init.Success -> if (partialChange.postId != 0L) ThreadUiEvent.ScrollToFirstReply else null
-            ThreadPartialChange.LoadPrevious.Start -> ThreadUiEvent.ScrollToFirstReply
-            is ThreadPartialChange.AddFavorite.Success -> ThreadUiEvent.AddFavoriteSuccess(
-                partialChange.floor
-            )
-
-            ThreadPartialChange.RemoveFavorite.Success -> ThreadUiEvent.RemoveFavoriteSuccess
-            is ThreadPartialChange.Load.Success -> ThreadUiEvent.LoadSuccess(partialChange.currentPage)
-
-            is ThreadPartialChange.LoadMyLatestReply.Success -> ThreadUiEvent.ScrollToLatestReply.takeIf {
-                partialChange.hasNewPost
+            // ---- 赞踩:差分计数模型的记录更新,状态数字由 UI 从记录推导,reducer 不再改计数 ----
+            // Start 置在途标志(E2):请求未返回前刷新必须跳过对齐,失败回滚依赖 server 未被污染
+            is ThreadPartialChange.DisagreeThread.Start -> {
+                updateOpRecord(AgreeParams.OBJ_THREAD, partialChange.threadId) {
+                    it.copy(
+                        my = if (partialChange.hasDisagree) MyAgreeOp.DISAGREE else MyAgreeOp.NONE,
+                        inFlight = true
+                    )
+                }
+                null
             }
 
-            is ThreadPartialChange.DeletePost.Success -> CommonUiEvent.Toast(
-                App.INSTANCE.getString(R.string.toast_delete_success)
-            )
+            is ThreadPartialChange.DisagreePost.Start -> {
+                updateOpRecord(AgreeParams.OBJ_POST, partialChange.postId) {
+                    it.copy(
+                        my = if (partialChange.hasDisagree) MyAgreeOp.DISAGREE else MyAgreeOp.NONE,
+                        inFlight = true
+                    )
+                }
+                null
+            }
 
-            is ThreadPartialChange.DeletePost.Failure -> CommonUiEvent.Toast(
-                App.INSTANCE.getString(R.string.toast_delete_failure, partialChange.errorMessage)
-            )
+            is ThreadPartialChange.AgreeThread.Start -> {
+                updateOpRecord(AgreeParams.OBJ_THREAD, partialChange.threadId) {
+                    it.copy(
+                        my = if (partialChange.hasAgree) MyAgreeOp.AGREE else MyAgreeOp.NONE,
+                        inFlight = true
+                    )
+                }
+                null
+            }
 
-            is ThreadPartialChange.DeleteThread.Success -> CommonUiEvent.NavigateUp
-            is ThreadPartialChange.DeleteThread.Failure -> CommonUiEvent.Toast(
-                App.INSTANCE.getString(R.string.toast_delete_failure, partialChange.errorMessage)
-            )
+            is ThreadPartialChange.AgreePost.Start -> {
+                updateOpRecord(AgreeParams.OBJ_POST, partialChange.postId) {
+                    it.copy(
+                        my = if (partialChange.hasAgree) MyAgreeOp.AGREE else MyAgreeOp.NONE,
+                        inFlight = true
+                    )
+                }
+                null
+            }
+
+            // 点踩任意失败都明确提示;记录回退到服务端已确认状态
+            // (revertPending 带无记录守卫:账号切换窗口内收尾不写进新账号文件,下同)
+            is ThreadPartialChange.DisagreeThread.Failure -> {
+                if (partialChange.errorCode != AgreeParams.RATE_LIMIT_ERROR_CODE) {
+                    OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_THREAD, partialChange.threadId)
+                }
+                CommonUiEvent.Toast(partialChange.errorMessage.ifBlank { "操作失败" })
+            }
+
+            is ThreadPartialChange.DisagreePost.Failure -> {
+                if (partialChange.errorCode != AgreeParams.RATE_LIMIT_ERROR_CODE) {
+                    OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_POST, partialChange.postId)
+                }
+                CommonUiEvent.Toast(partialChange.errorMessage.ifBlank { "操作失败" })
+            }
+
+            is ThreadPartialChange.AgreeThread.Failure -> {
+                if (partialChange.errorCode != AgreeParams.RATE_LIMIT_ERROR_CODE) {
+                    OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_THREAD, partialChange.threadId)
+                }
+                if (partialChange.errorCode == AgreeParams.RATE_LIMIT_ERROR_CODE) {
+                    CommonUiEvent.Toast(partialChange.errorMessage)
+                } else null
+            }
+
+            is ThreadPartialChange.AgreePost.Failure -> {
+                if (partialChange.errorCode != AgreeParams.RATE_LIMIT_ERROR_CODE) {
+                    OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_POST, partialChange.postId)
+                }
+                if (partialChange.errorCode == AgreeParams.RATE_LIMIT_ERROR_CODE) {
+                    CommonUiEvent.Toast(partialChange.errorMessage)
+                } else null
+            }
+
+            // 赞的服务端权威拒绝静默对齐(点赞失败历来静默,仅对齐记录);
+            // confirm 带无记录守卫(与 revertPending 同口径,防切换窗口写串文件)
+            is ThreadPartialChange.AgreeThread.AuthoritativeReject -> {
+                OpRecordStore.confirm(
+                    App.INSTANCE,
+                    AgreeParams.OBJ_THREAD,
+                    partialChange.threadId,
+                    serverOpFromErrorCode(partialChange.code)
+                )
+                null
+            }
+
+            is ThreadPartialChange.AgreePost.AuthoritativeReject -> {
+                OpRecordStore.confirm(
+                    App.INSTANCE,
+                    AgreeParams.OBJ_POST,
+                    partialChange.postId,
+                    serverOpFromErrorCode(partialChange.code)
+                )
+                null
+            }
+
+            // 点踩的服务端权威拒绝:无条件采纳服务端陈述的我的状态,并告知服务端原话
+            is ThreadPartialChange.DisagreeThread.AuthoritativeReject -> {
+                OpRecordStore.confirm(
+                    App.INSTANCE,
+                    AgreeParams.OBJ_THREAD,
+                    partialChange.threadId,
+                    serverOpFromErrorCode(partialChange.code)
+                )
+                CommonUiEvent.Toast(partialChange.msg.ifBlank { partialChange.code })
+            }
+
+            is ThreadPartialChange.DisagreePost.AuthoritativeReject -> {
+                OpRecordStore.confirm(
+                    App.INSTANCE,
+                    AgreeParams.OBJ_POST,
+                    partialChange.postId,
+                    serverOpFromErrorCode(partialChange.code)
+                )
+                CommonUiEvent.Toast(partialChange.msg.ifBlank { partialChange.code })
+            }
+
+            // 数据重载:基准计数已包含本地已确认操作,对齐标记对齐当前意图
+            is ThreadPartialChange.Load.Success -> {
+                rebaseLoaded(partialChange.threadInfo, partialChange.data)
+                // 楼层与主帖(OBJ_THREAD)统一批量播种(含主题,否则历史点赞的主题首次进入必显示未赞)
+                seedFromPage(partialChange.threadInfo, partialChange.data)
+                ThreadUiEvent.LoadSuccess(partialChange.currentPage)
+            }
+
+            is ThreadPartialChange.LoadFirstPage.Success -> {
+                rebaseLoaded(partialChange.threadInfo, partialChange.data)
+                seedFromPage(partialChange.threadInfo, partialChange.data)
+                null
+            }
+
+            is ThreadPartialChange.LoadPrevious.Success -> {
+                rebaseLoaded(partialChange.threadInfo, partialChange.data)
+                seedFromPage(partialChange.threadInfo, partialChange.data)
+                null
+            }
+
+            // 翻页/追加最新回复同样是数据重载:响应里的 threadInfo 基准已包含此前
+            // 已确认的操作,漏对齐会让"已确认未刷基准"的乐观偏移叠加在新基准上
+            // (点赞主帖后翻页,显示恒 +1 直至下拉刷新);新页楼层的回显也要播种。
+            is ThreadPartialChange.LoadMore.Success -> {
+                rebaseLoaded(partialChange.threadInfo, partialChange.data)
+                seedFromPage(partialChange.threadInfo, partialChange.data)
+                null
+            }
+
+            is ThreadPartialChange.LoadLatestPosts.Success -> {
+                rebaseLoaded(partialChange.threadInfo, partialChange.data)
+                seedFromPage(partialChange.threadInfo, partialChange.data)
+                null
+            }
+
+            is ThreadPartialChange.LoadMyLatestReply.Success -> {
+                // 该链不携带 threadInfo,只对齐/播种响应涉及的楼层
+                rebaseLoadedPosts(partialChange.posts)
+                seedFromPosts(partialChange.posts)
+                null
+            }
 
             else -> null
         }
     }
 
-    private object ThreadPartialChangeProducer :
+    private class ThreadPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<ThreadUiIntent, ThreadPartialChange, ThreadUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<ThreadUiIntent>): Flow<ThreadPartialChange> =
@@ -139,6 +362,10 @@ class ThreadViewModel @Inject constructor() :
                     .flatMapConcat { it.producePartialChange() },
                 intentFlow.filterIsInstance<ThreadUiIntent.AgreePost>()
                     .flatMapConcat { it.producePartialChange() },
+                intentFlow.filterIsInstance<ThreadUiIntent.DisagreeThread>()
+                    .flatMapConcat { it.producePartialChange() },
+                intentFlow.filterIsInstance<ThreadUiIntent.DisagreePost>()
+                    .flatMapConcat { it.producePartialChange() },
                 intentFlow.filterIsInstance<ThreadUiIntent.DeletePost>()
                     .flatMapConcat { it.producePartialChange() },
                 intentFlow.filterIsInstance<ThreadUiIntent.DeleteThread>()
@@ -166,30 +393,32 @@ class ThreadViewModel @Inject constructor() :
                 )
                 .map<PbPageResponse, ThreadPartialChange.Load> { response ->
                     if (response.data_?.page == null
-                        || response.data_.thread?.author == null
-                        || response.data_.forum == null
-                        || response.data_.anti == null
+                        || response.data_!!.thread?.author == null
+                        || response.data_!!.forum == null
+                        || response.data_!!.anti == null
                     ) throw TiebaUnknownException
-                    val postList = response.data_.post_list
-                    val firstPost = response.data_.first_floor_post
+                    val postList = response.data_!!.post_list
+                    // first_floor_post 常缺 from_forum,补齐后主楼层多图才能绑定大图浏览数据
+                    val firstPost = response.data_!!.first_floor_post
+                        ?.withForumFallback(response.data_!!.forum)
                     val notFirstPosts = postList.filterNot { it.floor == 1 }
                     ThreadPartialChange.Load.Success(
-                        response.data_.thread.title,
-                        response.data_.thread.author,
-                        response.data_.user ?: User(),
+                        response.data_!!.thread!!.title,
+                        response.data_!!.thread!!.author!!,
+                        response.data_!!.user ?: User(),
                         firstPost,
                         notFirstPosts.map { PostItemData(it.wrapImmutable()) },
-                        response.data_.thread,
-                        response.data_.forum,
-                        response.data_.anti,
-                        response.data_.page.current_page,
-                        response.data_.page.new_total_page,
-                        response.data_.page.has_more != 0,
-                        response.data_.thread.getNextPagePostId(
+                        response.data_!!.thread!!,
+                        response.data_!!.forum!!,
+                        response.data_!!.anti!!,
+                        response.data_!!.page!!.current_page,
+                        response.data_!!.page!!.new_total_page,
+                        response.data_!!.page!!.has_more != 0,
+                        response.data_!!.thread!!.getNextPagePostId(
                             postList.map { it.id },
                             sortType
                         ),
-                        response.data_.page.has_prev != 0,
+                        response.data_!!.page!!.has_prev != 0,
                         firstPost?.contentRenders,
                         postId,
                         seeLz,
@@ -204,26 +433,28 @@ class ThreadViewModel @Inject constructor() :
                 .pbPage(threadId, 0, 0, forumId, seeLz, sortType)
                 .map<PbPageResponse, ThreadPartialChange.LoadFirstPage> { response ->
                     if (response.data_?.page == null
-                        || response.data_.thread?.author == null
-                        || response.data_.forum == null
-                        || response.data_.anti == null
+                        || response.data_!!.thread?.author == null
+                        || response.data_!!.forum == null
+                        || response.data_!!.anti == null
                     ) throw TiebaUnknownException
-                    val postList = response.data_.post_list
-                    val firstPost = response.data_.first_floor_post
+                    val postList = response.data_!!.post_list
+                    // 同上:补齐 from_forum,避免主楼层多图大图翻页整体失效
+                    val firstPost = response.data_!!.first_floor_post
+                        ?.withForumFallback(response.data_!!.forum)
                     val notFirstPosts = postList.filterNot { it.floor == 1 }
                     ThreadPartialChange.LoadFirstPage.Success(
-                        response.data_.thread.title,
-                        response.data_.thread.author,
+                        response.data_!!.thread!!.title,
+                        response.data_!!.thread!!.author!!,
                         notFirstPosts.map { PostItemData(it.wrapImmutable()) },
-                        response.data_.thread,
-                        response.data_.page.current_page,
-                        response.data_.page.new_total_page,
-                        response.data_.page.has_more != 0,
-                        response.data_.thread.getNextPagePostId(
+                        response.data_!!.thread!!,
+                        response.data_!!.page!!.current_page,
+                        response.data_!!.page!!.new_total_page,
+                        response.data_!!.page!!.has_more != 0,
+                        response.data_!!.thread!!.getNextPagePostId(
                             postList.map { it.id },
                             sortType
                         ),
-                        response.data_.page.has_prev != 0,
+                        response.data_!!.page!!.has_prev != 0,
                         firstPost?.contentRenders ?: emptyList(),
                         postId = 0,
                         seeLz,
@@ -238,20 +469,20 @@ class ThreadViewModel @Inject constructor() :
                 .pbPage(threadId, page, postId, forumId, seeLz, sortType)
                 .map<PbPageResponse, ThreadPartialChange.LoadMore> { response ->
                     if (response.data_?.page == null
-                        || response.data_.thread?.author == null
-                        || response.data_.forum == null
-                        || response.data_.anti == null
+                        || response.data_!!.thread?.author == null
+                        || response.data_!!.forum == null
+                        || response.data_!!.anti == null
                     ) throw TiebaUnknownException
-                    val postList = response.data_.post_list
+                    val postList = response.data_!!.post_list
                     val posts = postList.filterNot { it.floor == 1 || postIds.contains(it.id) }
                     ThreadPartialChange.LoadMore.Success(
-                        response.data_.thread.author,
+                        response.data_!!.thread!!.author!!,
                         posts.map { PostItemData(it.wrapImmutable()) },
-                        response.data_.thread,
-                        response.data_.page.current_page,
-                        response.data_.page.new_total_page,
-                        response.data_.page.has_more != 0,
-                        response.data_.thread.getNextPagePostId(
+                        response.data_!!.thread!!,
+                        response.data_!!.page!!.current_page,
+                        response.data_!!.page!!.new_total_page,
+                        response.data_!!.page!!.has_more != 0,
+                        response.data_!!.thread!!.getNextPagePostId(
                             postIds + posts.map { it.id },
                             sortType
                         ),
@@ -272,19 +503,19 @@ class ThreadViewModel @Inject constructor() :
                 .pbPage(threadId, page, postId, forumId, seeLz, sortType, back = true)
                 .map<PbPageResponse, ThreadPartialChange.LoadPrevious> { response ->
                     if (response.data_?.page == null
-                        || response.data_.thread?.author == null
-                        || response.data_.forum == null
-                        || response.data_.anti == null
+                        || response.data_!!.thread?.author == null
+                        || response.data_!!.forum == null
+                        || response.data_!!.anti == null
                     ) throw TiebaUnknownException
-                    val postList = response.data_.post_list
+                    val postList = response.data_!!.post_list
                     val posts = postList.filterNot { it.floor == 1 || postIds.contains(it.id) }
                     ThreadPartialChange.LoadPrevious.Success(
-                        response.data_.thread.author,
+                        response.data_!!.thread!!.author!!,
                         posts.map { PostItemData(it.wrapImmutable()) },
-                        response.data_.thread,
-                        response.data_.page.current_page,
-                        response.data_.page.new_total_page,
-                        response.data_.page.has_prev != 0,
+                        response.data_!!.thread!!,
+                        response.data_!!.page!!.current_page,
+                        response.data_!!.page!!.new_total_page,
+                        response.data_!!.page!!.has_prev != 0,
                     )
                 }
                 .onStart { emit(ThreadPartialChange.LoadPrevious.Start) }
@@ -310,21 +541,21 @@ class ThreadViewModel @Inject constructor() :
                 )
                 .map { response ->
                     checkNotNull(response.data_)
-                    checkNotNull(response.data_.thread)
-                    checkNotNull(response.data_.thread.author)
-                    checkNotNull(response.data_.page)
-                    val postList = response.data_.post_list.filterNot { it.floor == 1 }
+                    checkNotNull(response.data_!!.thread)
+                    checkNotNull(response.data_!!.thread!!.author)
+                    checkNotNull(response.data_!!.page)
+                    val postList = response.data_!!.post_list.filterNot { it.floor == 1 }
                     if (postList.isEmpty()) {
                         ThreadPartialChange.LoadLatestPosts.SuccessWithNoNewPost
                     } else {
                         ThreadPartialChange.LoadLatestPosts.Success(
-                            author = response.data_.thread.author,
+                            author = response.data_!!.thread!!.author!!,
                             data = postList.map { PostItemData(it.wrapImmutable()) },
-                            threadInfo = response.data_.thread,
-                            currentPage = response.data_.page.current_page,
-                            totalPage = response.data_.page.new_total_page,
-                            hasMore = response.data_.page.has_more != 0,
-                            nextPagePostId = response.data_.thread.getNextPagePostId(
+                            threadInfo = response.data_!!.thread!!,
+                            currentPage = response.data_!!.page!!.current_page,
+                            totalPage = response.data_!!.page!!.new_total_page,
+                            hasMore = response.data_!!.page!!.has_more != 0,
+                            nextPagePostId = response.data_!!.thread!!.getNextPagePostId(
                                 postList.map { it.id },
                                 sortType
                             ),
@@ -345,18 +576,18 @@ class ThreadViewModel @Inject constructor() :
                 .pbPage(threadId, page = 0, postId = postId, forumId = forumId)
                 .map<PbPageResponse, ThreadPartialChange.LoadMyLatestReply> { response ->
                     if (response.data_?.page == null
-                        || response.data_.thread?.author == null
-                        || response.data_.forum == null
-                        || response.data_.anti == null
+                        || response.data_!!.thread?.author == null
+                        || response.data_!!.forum == null
+                        || response.data_!!.anti == null
                     ) throw TiebaUnknownException
-                    val firstLatestPost = response.data_.post_list.first()
+                    val firstLatestPost = response.data_!!.post_list.first()
                     ThreadPartialChange.LoadMyLatestReply.Success(
-                        anti = response.data_.anti,
-                        posts = response.data_.post_list.map { PostItemData(it.wrapImmutable()) },
-                        page = response.data_.page.current_page,
+                        anti = response.data_!!.anti!!,
+                        posts = response.data_!!.post_list.map { PostItemData(it.wrapImmutable()) },
+                        page = response.data_!!.page!!.current_page,
                         isContinuous = firstLatestPost.floor == curLatestPostFloor + 1,
                         isDesc = isDesc,
-                        hasNewPost = response.data_.post_list.any { !curPostIds.contains(it.id) },
+                        hasNewPost = response.data_!!.post_list.any { !curPostIds.contains(it.id) },
                     )
                 }
                 .onStart { emit(ThreadPartialChange.LoadMyLatestReply.Start) }
@@ -366,7 +597,7 @@ class ThreadViewModel @Inject constructor() :
             flowOf(ThreadPartialChange.ToggleImmersiveMode.Success(isImmersiveMode))
 
         fun ThreadUiIntent.AddFavorite.producePartialChange(): Flow<ThreadPartialChange.AddFavorite> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .addStoreFlow(threadId, postId)
                 .map { response ->
                     if (response.errorCode == 0) {
@@ -389,7 +620,7 @@ class ThreadViewModel @Inject constructor() :
                 }
 
         fun ThreadUiIntent.RemoveFavorite.producePartialChange(): Flow<ThreadPartialChange.RemoveFavorite> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .removeStoreFlow(threadId, forumId, tbs)
                 .map { response ->
                     if (response.errorCode == 0) {
@@ -409,32 +640,110 @@ class ThreadViewModel @Inject constructor() :
                     )
                 }
 
-        fun ThreadUiIntent.AgreeThread.producePartialChange(): Flow<ThreadPartialChange.AgreeThread> =
-            TiebaApi.getInstance()
-                .opAgreeFlow(
-                    threadId.toString(),
-                    postId.toString(),
-                    opType = if (agree) 0 else 1,
-                    objType = 3
-                )
-                .map<AgreeBean, ThreadPartialChange.AgreeThread> {
-                    ThreadPartialChange.AgreeThread.Success(
-                        agree
-                    )
-                }
-                .onStart { emit(ThreadPartialChange.AgreeThread.Start(agree)) }
-                .catch {
-                    emit(
-                        ThreadPartialChange.AgreeThread.Failure(
-                            !agree,
-                            it.getErrorCode(),
-                            it.getErrorMessage()
+        fun ThreadUiIntent.AgreeThread.producePartialChange(): Flow<ThreadPartialChange.AgreeThread> {
+            // 限流检查先于任何状态变更:被拦截的请求不产生 Start,也不改本地状态
+            val acquired = AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_THREAD, threadId))
+            // 配对撤销只在主操作被服务端接受/权威对齐时执行(下方 Ok/Authoritative 分支调用)。
+            // 主操作被字符串错误码拒绝(Business)时 HTTP 200 不抛异常,撤销若照发会把一次
+            // "拒绝"放大成反向漂移:服务端另一侧记录被真删、本地却回滚,两边各自漂移
+            suspend fun undoDisagreeIfAccepted() {
+                if (!undoDisagree) return
+                // 服务端赞踩相互独立,点赞时需显式撤销已有的踩;撤销失败不回滚点赞
+                runCatching {
+                    if (!AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_THREAD, threadId), checkPerObject = false)) {
+                        return@runCatching
+                    }
+                    tiebaApi
+                        .opDisagreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            objType = AgreeParams.OBJ_THREAD,
+                            opType = AgreeParams.OP_UNDO,
+                            forumId = forumId?.toString()
                         )
+                        .collect { }
+                }
+            }
+            return flow {
+                if (!acquired) {
+                    throw TiebaRateLimitedException()
+                }
+                emitAll(
+                    tiebaApi
+                        .opAgreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            opType = if (agree) 0 else 1,
+                            objType = AgreeParams.OBJ_THREAD,
+                            forumId = forumId?.toString()
+                        )
+                )
+            }
+                .map<AgreeBean, ThreadPartialChange.AgreeThread> { bean ->
+                    when (val result = bean.toOpAgreeResult(threadId, agree)) {
+                        is OpAgreeResult.Ok -> {
+                            // E2: 请求成功收尾,清在途标志(意图/对齐标记不动,
+                            // 乐观偏移保留到下次数据重载时由 rebase 对齐)
+                            OpRecordStore.clearInFlight(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId)
+                            undoDisagreeIfAccepted()
+                            ThreadPartialChange.AgreeThread.Success(threadId, agree)
+                        }
+
+                        is OpAgreeResult.Authoritative -> {
+                            undoDisagreeIfAccepted()
+                            ThreadPartialChange.AgreeThread.AuthoritativeReject(
+                                threadId = threadId,
+                                code = result.code,
+                                msg = result.msg,
+                            )
+                        }
+
+                        is OpAgreeResult.Business ->
+                            ThreadPartialChange.AgreeThread.Failure(
+                                threadId = threadId,
+                                hasAgree = !agree,
+                                errorCode = result.code.toIntOrNull() ?: CommonResponse.ERROR_CODE_UNKNOWN,
+                                errorMessage = result.msg,
+                            )
+                    }
+                }
+                // 取消终结(与 AgreeOpRunner 同口径):在途意图被页面销毁打断时回滚+清标志,
+                // 否则该对象每次 rebase 都被当在途跳过,漂移只有杀进程才愈合。
+                // 守卫读内存表 inFlight=true:Started 未被消费(取消过早)时绝不凭空写记录。
+                .onCompletion { cause ->
+                    if (cause != null && acquired &&
+                        OpRecordStore.records.value[OpRecordStore.key(AgreeParams.OBJ_THREAD, threadId)]?.inFlight == true
+                    ) {
+                        OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId)
+                    }
+                }
+                .onStart {
+                    if (acquired) emit(ThreadPartialChange.AgreeThread.Start(threadId, agree))
+                }
+                .catch {
+                    val msg = it.getErrorMessage()
+                    val authoritative = serverOpFromErrorMessage(msg)
+                    emit(
+                        if (authoritative != null) {
+                            ThreadPartialChange.AgreeThread.AuthoritativeReject(
+                                threadId = threadId,
+                                code = msg,
+                                msg = msg,
+                            )
+                        } else {
+                            ThreadPartialChange.AgreeThread.Failure(
+                                threadId,
+                                !agree,
+                                it.toOpAgreeErrorCode(),
+                                msg
+                            )
+                        }
                     )
                 }
+        }
 
         fun ThreadUiIntent.PollThread.producePartialChange(): Flow<ThreadPartialChange.PollThread> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .addPollPostProtobuf(
                     forumId,
                     threadId,
@@ -455,34 +764,318 @@ class ThreadViewModel @Inject constructor() :
                     )
                 }
 
-        fun ThreadUiIntent.AgreePost.producePartialChange(): Flow<ThreadPartialChange.AgreePost> =
-            TiebaApi.getInstance()
-                .opAgreeFlow(
-                    threadId.toString(),
-                    postId.toString(),
-                    if (agree) 0 else 1,
-                    objType = 1
-                )
-                .map<AgreeBean, ThreadPartialChange.AgreePost> {
-                    ThreadPartialChange.AgreePost.Success(
-                        postId,
-                        agree
-                    )
-                }
-                .onStart { emit(ThreadPartialChange.AgreePost.Start(postId, agree)) }
-                .catch {
-                    emit(
-                        ThreadPartialChange.AgreePost.Failure(
-                            postId,
-                            !agree,
-                            it.getErrorCode(),
-                            it.getErrorMessage()
+        fun ThreadUiIntent.AgreePost.producePartialChange(): Flow<ThreadPartialChange.AgreePost> {
+            // 限流检查先于任何状态变更:被拦截的请求不产生 Start,也不改本地状态
+            // (tryAcquire 必须写在 flow{} 之外,否则 .onStart 会先发 Start 造成永久"幽灵赞")
+            val acquired = AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_POST, postId))
+            // 配对撤销只在主操作被服务端接受/权威对齐时执行(Business 拒绝不撤销,
+            // 理由同 AgreeThread:字符串错误码路径不抛异常,撤销照发会反向漂移)
+            suspend fun undoDisagreeIfAccepted() {
+                if (!undoDisagree) return
+                // 服务端赞踩相互独立,点赞时需显式撤销已有的踩;撤销失败不回滚点赞
+                runCatching {
+                    if (!AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_POST, postId), checkPerObject = false)) {
+                        return@runCatching
+                    }
+                    tiebaApi
+                        .opDisagreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            objType = AgreeParams.OBJ_POST,
+                            opType = AgreeParams.OP_UNDO,
+                            forumId = forumId?.toString()
                         )
+                        .collect { }
+                }
+            }
+            return flow {
+                // 赞与踩共用 /c/c/agree/opAgree 端点,风控限流必须覆盖两条路径
+                if (!acquired) {
+                    throw TiebaRateLimitedException()
+                }
+                emitAll(
+                    tiebaApi
+                        .opAgreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            if (agree) 0 else 1,
+                            objType = AgreeParams.OBJ_POST,
+                            forumId = forumId?.toString()
+                        )
+                )
+            }
+                .map<AgreeBean, ThreadPartialChange.AgreePost> { bean ->
+                    // 与 AgreeThread 同构的三态判定:服务端明确拒绝(如"你已赞过")不能记成成功
+                    when (val result = bean.toOpAgreeResult(postId, agree)) {
+                        is OpAgreeResult.Ok -> {
+                            // E2: 请求成功收尾,清在途标志(同 AgreeThread)
+                            OpRecordStore.clearInFlight(App.INSTANCE, AgreeParams.OBJ_POST, postId)
+                            undoDisagreeIfAccepted()
+                            ThreadPartialChange.AgreePost.Success(postId, agree)
+                        }
+
+                        is OpAgreeResult.Authoritative -> {
+                            undoDisagreeIfAccepted()
+                            ThreadPartialChange.AgreePost.AuthoritativeReject(
+                                postId = postId,
+                                code = result.code,
+                                msg = result.msg,
+                            )
+                        }
+
+                        is OpAgreeResult.Business ->
+                            ThreadPartialChange.AgreePost.Failure(
+                                postId = postId,
+                                hasAgree = !agree,
+                                errorCode = result.code.toIntOrNull() ?: CommonResponse.ERROR_CODE_UNKNOWN,
+                                errorMessage = result.msg,
+                            )
+                    }
+                }
+                // 取消终结(与 AgreeOpRunner 同口径):在途意图被页面销毁打断时回滚+清标志,
+                // 否则该对象每次 rebase 都被当在途跳过,漂移只有杀进程才愈合。
+                // 守卫读内存表 inFlight=true:Started 未被消费(取消过早)时绝不凭空写记录。
+                .onCompletion { cause ->
+                    if (cause != null && acquired &&
+                        OpRecordStore.records.value[OpRecordStore.key(AgreeParams.OBJ_POST, postId)]?.inFlight == true
+                    ) {
+                        OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_POST, postId)
+                    }
+                }
+                .onStart { if (acquired) emit(ThreadPartialChange.AgreePost.Start(postId, agree)) }
+                .catch {
+                    // 错误可能由 FailureResponseInterceptor 以异常形式抛出(error_code 为数字时),
+                    // 此时 .map 不会被调用,必须在这里识别服务端权威陈述,否则会盲目回滚
+                    val msg = it.getErrorMessage()
+                    val authoritative = serverOpFromErrorMessage(msg)
+                    emit(
+                        if (authoritative != null) {
+                            ThreadPartialChange.AgreePost.AuthoritativeReject(
+                                postId = postId,
+                                code = msg,
+                                msg = msg,
+                            )
+                        } else {
+                            ThreadPartialChange.AgreePost.Failure(
+                                postId,
+                                !agree,
+                                it.toOpAgreeErrorCode(),
+                                msg
+                            )
+                        }
                     )
                 }
+        }
+
+        fun ThreadUiIntent.DisagreeThread.producePartialChange(): Flow<ThreadPartialChange.DisagreeThread> {
+            // 限流检查先于任何状态变更:被拦截的请求不产生 Start,也不改本地状态
+            val acquired = AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_THREAD, threadId))
+            // 配对撤销只在主操作被服务端接受/权威对齐时执行(Business 拒绝不撤销,
+            // 理由同 AgreeThread:字符串错误码路径不抛异常,撤销照发会反向漂移)
+            suspend fun undoAgreeIfAccepted() {
+                if (!undoAgree) return
+                // 点踩时显式撤销已有的赞;撤销失败不回滚踩
+                runCatching {
+                    if (!AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_THREAD, threadId), checkPerObject = false)) {
+                        return@runCatching
+                    }
+                    tiebaApi
+                        .opAgreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            opType = AgreeParams.OP_UNDO,
+                            objType = AgreeParams.OBJ_THREAD,
+                            forumId = forumId?.toString()
+                        )
+                        .collect { }
+                }
+            }
+            return flow {
+                if (!acquired) {
+                    throw TiebaRateLimitedException()
+                }
+                emitAll(
+                    tiebaApi
+                        .opDisagreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            objType = AgreeParams.OBJ_THREAD,
+                            opType = if (disagree) AgreeParams.OP_DO else AgreeParams.OP_UNDO,
+                            forumId = forumId?.toString()
+                        )
+                )
+            }
+                .map<AgreeBean, ThreadPartialChange.DisagreeThread> { bean ->
+                    when (val result = bean.toOpAgreeResult(threadId, disagree)) {
+                        is OpAgreeResult.Ok -> {
+                            // E2: 请求成功收尾,清在途标志(同 AgreeThread)
+                            OpRecordStore.clearInFlight(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId)
+                            undoAgreeIfAccepted()
+                            ThreadPartialChange.DisagreeThread.Success(threadId, disagree)
+                        }
+
+                        is OpAgreeResult.Authoritative -> {
+                            undoAgreeIfAccepted()
+                            ThreadPartialChange.DisagreeThread.AuthoritativeReject(
+                                threadId = threadId,
+                                code = result.code,
+                                msg = result.msg,
+                            )
+                        }
+
+                        is OpAgreeResult.Business ->
+                            ThreadPartialChange.DisagreeThread.Failure(
+                                threadId = threadId,
+                                hasDisagree = !disagree,
+                                errorCode = result.code.toIntOrNull() ?: CommonResponse.ERROR_CODE_UNKNOWN,
+                                errorMessage = result.msg,
+                            )
+                    }
+                }
+                // 取消终结(与 AgreeOpRunner 同口径):在途意图被页面销毁打断时回滚+清标志,
+                // 否则该对象每次 rebase 都被当在途跳过,漂移只有杀进程才愈合。
+                // 守卫读内存表 inFlight=true:Started 未被消费(取消过早)时绝不凭空写记录。
+                .onCompletion { cause ->
+                    if (cause != null && acquired &&
+                        OpRecordStore.records.value[OpRecordStore.key(AgreeParams.OBJ_THREAD, threadId)]?.inFlight == true
+                    ) {
+                        OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_THREAD, threadId)
+                    }
+                }
+                .onStart { if (acquired) emit(ThreadPartialChange.DisagreeThread.Start(threadId, disagree)) }
+                .catch {
+                    // 错误可能由 FailureResponseInterceptor 以异常形式抛出（error_code 为数字时），
+                    // 此时 .map 不会被调用，必须在这里识别服务端权威陈述，
+                    // 否则会走通用回滚——把状态还原成「踩」，与服务端「已取消踩」相反。
+                    val msg = it.getErrorMessage()
+                    val authoritative = serverOpFromErrorMessage(msg)
+                    emit(
+                        if (authoritative != null) {
+                            ThreadPartialChange.DisagreeThread.AuthoritativeReject(
+                                threadId = threadId,
+                                code = msg,
+                                msg = msg,
+                            )
+                        } else {
+                            ThreadPartialChange.DisagreeThread.Failure(
+                                threadId,
+                                !disagree,
+                                it.toOpAgreeErrorCode(),
+                                msg
+                            )
+                        }
+                    )
+                }
+        }
+
+        fun ThreadUiIntent.DisagreePost.producePartialChange(): Flow<ThreadPartialChange.DisagreePost> {
+            // 限流检查先于任何状态变更:被拦截的请求不产生 Start,也不改本地状态
+            val acquired = AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_POST, postId))
+            // 配对撤销只在主操作被服务端接受/权威对齐时执行(Business 拒绝不撤销,
+            // 理由同 AgreeThread:字符串错误码路径不抛异常,撤销照发会反向漂移)
+            suspend fun undoAgreeIfAccepted() {
+                if (!undoAgree) return
+                // 点踩时显式撤销已有的赞;撤销失败不回滚踩
+                runCatching {
+                    if (!AgreeRateLimiter.tryAcquire(AgreeRateLimiter.keyFor(AgreeParams.OBJ_POST, postId), checkPerObject = false)) {
+                        return@runCatching
+                    }
+                    tiebaApi
+                        .opAgreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            opType = AgreeParams.OP_UNDO,
+                            objType = AgreeParams.OBJ_POST,
+                            forumId = forumId?.toString()
+                        )
+                        .collect { }
+                }
+            }
+            return flow {
+                if (!acquired) {
+                    throw TiebaRateLimitedException()
+                }
+                emitAll(
+                    tiebaApi
+                        .opDisagreeFlow(
+                            threadId.toString(),
+                            postId.toString(),
+                            objType = AgreeParams.OBJ_POST,
+                            opType = if (disagree) AgreeParams.OP_DO else AgreeParams.OP_UNDO,
+                            forumId = forumId?.toString()
+                        )
+                )
+            }
+                .map<AgreeBean, ThreadPartialChange.DisagreePost> { bean ->
+                    when (val result = bean.toOpAgreeResult(postId, disagree)) {
+                        is OpAgreeResult.Ok -> {
+                            // E2: 请求成功收尾,清在途标志(同 AgreeThread)
+                            OpRecordStore.clearInFlight(App.INSTANCE, AgreeParams.OBJ_POST, postId)
+                            undoAgreeIfAccepted()
+                            ThreadPartialChange.DisagreePost.Success(postId, disagree)
+                        }
+
+                        is OpAgreeResult.Authoritative -> {
+                            undoAgreeIfAccepted()
+                            ThreadPartialChange.DisagreePost.AuthoritativeReject(
+                                postId = postId,
+                                code = result.code,
+                                msg = result.msg,
+                            )
+                        }
+
+                        is OpAgreeResult.Business ->
+                            ThreadPartialChange.DisagreePost.Failure(
+                                postId = postId,
+                                hasDisagree = !disagree,
+                                errorCode = result.code.toIntOrNull() ?: CommonResponse.ERROR_CODE_UNKNOWN,
+                                errorMessage = result.msg,
+                            )
+                    }
+                }
+                // 取消终结(与 AgreeOpRunner 同口径):在途意图被页面销毁打断时回滚+清标志,
+                // 否则该对象每次 rebase 都被当在途跳过,漂移只有杀进程才愈合。
+                // 守卫读内存表 inFlight=true:Started 未被消费(取消过早)时绝不凭空写记录。
+                .onCompletion { cause ->
+                    if (cause != null && acquired &&
+                        OpRecordStore.records.value[OpRecordStore.key(AgreeParams.OBJ_POST, postId)]?.inFlight == true
+                    ) {
+                        OpRecordStore.revertPending(App.INSTANCE, AgreeParams.OBJ_POST, postId)
+                    }
+                }
+                .onStart { if (acquired) emit(ThreadPartialChange.DisagreePost.Start(postId, disagree)) }
+                .catch {
+                    // 同上：异常路径下也要识别服务端权威陈述，避免盲目回滚成「踩」
+                    val msg = it.getErrorMessage()
+                    val authoritative = serverOpFromErrorMessage(msg)
+                    emit(
+                        if (authoritative != null) {
+                            ThreadPartialChange.DisagreePost.AuthoritativeReject(
+                                postId = postId,
+                                code = msg,
+                                msg = msg,
+                            )
+                        } else {
+                            ThreadPartialChange.DisagreePost.Failure(
+                                postId,
+                                !disagree,
+                                it.toOpAgreeErrorCode(),
+                                msg
+                            )
+                        }
+                    )
+                }
+        }
+
+        /**
+         * 限流异常使用约定的错误码，便于 UI 层识别
+         */
+        fun Throwable.toOpAgreeErrorCode(): Int =
+            if (this is TiebaRateLimitedException) AgreeParams.RATE_LIMIT_ERROR_CODE
+            else getErrorCode()
 
         fun ThreadUiIntent.DeletePost.producePartialChange(): Flow<ThreadPartialChange.DeletePost> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .delPostFlow(forumId, forumName, threadId, postId, tbs, false, deleteMyPost)
                 .map<CommonResponse, ThreadPartialChange.DeletePost> {
                     ThreadPartialChange.DeletePost.Success(postId)
@@ -497,7 +1090,7 @@ class ThreadViewModel @Inject constructor() :
                 }
 
         fun ThreadUiIntent.DeleteThread.producePartialChange(): Flow<ThreadPartialChange.DeleteThread> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .delThreadFlow(forumId, forumName, threadId, tbs, deleteMyThread, false)
                 .map<CommonResponse, ThreadPartialChange.DeleteThread> {
                     ThreadPartialChange.DeleteThread.Success
@@ -602,7 +1195,10 @@ sealed interface ThreadUiIntent : UiIntent {
     data class AgreeThread(
         val threadId: Long,
         val postId: Long,
-        val agree: Boolean
+        val agree: Boolean,
+        val undoDisagree: Boolean = false,
+        // E1:opAgree 官方必带参数(threadInfo.forumId);null 时不发送
+        val forumId: Long? = null
     ) : ThreadUiIntent
 
     data class PollThread(
@@ -614,7 +1210,28 @@ sealed interface ThreadUiIntent : UiIntent {
     data class AgreePost(
         val threadId: Long,
         val postId: Long,
-        val agree: Boolean
+        val agree: Boolean,
+        val undoDisagree: Boolean = false,
+        // E1:opAgree 官方必带参数(threadInfo.forumId);null 时不发送
+        val forumId: Long? = null
+    ) : ThreadUiIntent
+
+    data class DisagreeThread(
+        val threadId: Long,
+        val postId: Long,
+        val disagree: Boolean,
+        val undoAgree: Boolean = false,
+        // E1:opAgree 官方必带参数(threadInfo.forumId);null 时不发送
+        val forumId: Long? = null
+    ) : ThreadUiIntent
+
+    data class DisagreePost(
+        val threadId: Long,
+        val postId: Long,
+        val disagree: Boolean,
+        val undoAgree: Boolean = false,
+        // E1:opAgree 官方必带参数(threadInfo.forumId);null 时不发送
+        val forumId: Long? = null
     ) : ThreadUiIntent
 
     data class DeletePost(
@@ -1080,40 +1697,30 @@ sealed interface ThreadPartialChange : PartialChange<ThreadUiState> {
     }
 
     sealed class AgreeThread : ThreadPartialChange {
-        override fun reduce(oldState: ThreadUiState): ThreadUiState {
-            return when (this) {
-                is Start -> oldState.copy(
-                    threadInfo = oldState.threadInfo?.getImmutable {
-                        updateAgreeStatus(hasAgree = if (hasAgree) 1 else 0)
-                    }
-                )
-
-                is Success -> oldState.copy(
-                    threadInfo = oldState.threadInfo?.getImmutable {
-                        updateAgreeStatus(hasAgree = if (hasAgree) 1 else 0)
-                    }
-                )
-
-                is Failure -> oldState.copy(
-                    threadInfo = oldState.threadInfo?.getImmutable {
-                        updateAgreeStatus(hasAgree = if (hasAgree) 1 else 0)
-                    }
-                )
-            }
-        }
+        // 计数与我的态度均由 opRecords 差分推导,reducer 不再改动状态
+        override fun reduce(oldState: ThreadUiState): ThreadUiState = oldState
 
         data class Start(
+            val threadId: Long,
             val hasAgree: Boolean
         ) : AgreeThread()
 
         data class Success(
+            val threadId: Long,
             val hasAgree: Boolean
         ) : AgreeThread()
 
         data class Failure(
+            val threadId: Long,
             val hasAgree: Boolean,
             val errorCode: Int,
             val errorMessage: String
+        ) : AgreeThread()
+
+        data class AuthoritativeReject(
+            val threadId: Long,
+            val code: String,
+            val msg: String,
         ) : AgreeThread()
     }
 
@@ -1147,36 +1754,8 @@ sealed interface ThreadPartialChange : PartialChange<ThreadUiState> {
     }
 
     sealed class AgreePost : ThreadPartialChange {
-        private fun List<PostItemData>.updateAgreeStatus(
-            postId: Long,
-            hasAgree: Int
-        ): ImmutableList<PostItemData> {
-            return map { item ->
-                val (holder) = item
-                val (post) = holder
-                if (post.id == postId) {
-                    item.copy(
-                        post = post.updateAgreeStatus(hasAgree).wrapImmutable()
-                    )
-                } else item
-            }.toImmutableList()
-        }
-
-        override fun reduce(oldState: ThreadUiState): ThreadUiState {
-            return when (this) {
-                is Start -> oldState.copy(
-                    data = oldState.data.updateAgreeStatus(postId, if (hasAgree) 1 else 0)
-                )
-
-                is Success -> oldState.copy(
-                    data = oldState.data.updateAgreeStatus(postId, if (hasAgree) 1 else 0)
-                )
-
-                is Failure -> oldState.copy(
-                    data = oldState.data.updateAgreeStatus(postId, if (hasAgree) 1 else 0)
-                )
-            }
-        }
+        // 计数与我的态度均由 opRecords 差分推导,reducer 不再改动状态
+        override fun reduce(oldState: ThreadUiState): ThreadUiState = oldState
 
         data class Start(
             val postId: Long,
@@ -1194,14 +1773,89 @@ sealed interface ThreadPartialChange : PartialChange<ThreadUiState> {
             val errorCode: Int,
             val errorMessage: String
         ) : AgreePost()
+
+        data class AuthoritativeReject(
+            val postId: Long,
+            val code: String,
+            val msg: String,
+        ) : AgreePost()
+    }
+
+    sealed class DisagreeThread : ThreadPartialChange {
+        // 计数与我的态度均由 opRecords 差分推导,reducer 不再改动状态
+        override fun reduce(oldState: ThreadUiState): ThreadUiState = oldState
+
+
+        data class Start(
+            val threadId: Long,
+            val hasDisagree: Boolean
+        ) : DisagreeThread()
+
+        data class Success(
+            val threadId: Long,
+            val hasDisagree: Boolean
+        ) : DisagreeThread()
+
+        data class Failure(
+            val threadId: Long,
+            val hasDisagree: Boolean,
+            val errorCode: Int,
+            val errorMessage: String
+        ) : DisagreeThread()
+
+        /**
+         * 服务端权威拒绝（ERR_USER_HAS_CANCEL_DISAGREE 等）。
+         * 与 Failure 的区别：Failure 是「请求没成功，回滚」；
+         * AuthoritativeReject 是「服务端陈述了真实状态，采纳」。
+         */
+        data class AuthoritativeReject(
+            val threadId: Long,
+            val code: String,
+            val msg: String,
+        ) : DisagreeThread()
+    }
+
+    sealed class DisagreePost : ThreadPartialChange {
+        // 计数与我的态度均由 opRecords 差分推导,reducer 不再改动状态
+        override fun reduce(oldState: ThreadUiState): ThreadUiState = oldState
+
+
+        data class Start(
+            val postId: Long,
+            val hasDisagree: Boolean
+        ) : DisagreePost()
+
+        data class Success(
+            val postId: Long,
+            val hasDisagree: Boolean
+        ) : DisagreePost()
+
+        data class Failure(
+            val postId: Long,
+            val hasDisagree: Boolean,
+            val errorCode: Int,
+            val errorMessage: String
+        ) : DisagreePost()
+
+        /**
+         * 服务端权威拒绝（ERR_USER_HAS_CANCEL_DISAGREE 等）。
+         * 与 Failure 的区别：Failure 是「请求没成功，回滚」；
+         * AuthoritativeReject 是「服务端陈述了真实状态，采纳」。
+         */
+        data class AuthoritativeReject(
+            val postId: Long,
+            val code: String,
+            val msg: String,
+        ) : DisagreePost()
     }
 
     sealed class DeletePost : ThreadPartialChange {
         override fun reduce(oldState: ThreadUiState): ThreadUiState = when (this) {
             is Success -> {
                 val deletedPostIndex = oldState.data.indexOfFirst { it.post.get { id } == postId }
+                // 未命中(楼层已被并发删除/重复事件)时保持原列表:removeAt(-1) 会抛越界
                 oldState.copy(
-                    data = oldState.data.removeAt(deletedPostIndex),
+                    data = if (deletedPostIndex >= 0) oldState.data.removeAt(deletedPostIndex) else oldState.data,
                 )
             }
 
@@ -1261,6 +1915,7 @@ data class ThreadUiState(
     val latestPosts: ImmutableList<PostItemData> = persistentListOf(),
 
     val isImmersiveMode: Boolean = false,
+
 ) : UiState
 
 sealed interface ThreadUiEvent : UiEvent {
@@ -1296,6 +1951,7 @@ data class PostItemData(
 data class SubPostItemData(
     val subPost: ImmutableHolder<SubPostList>,
     val subPostContent: AnnotatedString,
+    val contentRenders: ImmutableList<PbContentRender> = persistentListOf(),
     val blocked: Boolean = subPost.get { shouldBlock() },
 ) {
     val id: Long

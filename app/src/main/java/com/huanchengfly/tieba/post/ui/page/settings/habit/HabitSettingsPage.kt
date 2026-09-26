@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.NightsStay
 import androidx.compose.material.icons.outlined.PhotoSizeSelectActual
 import androidx.compose.material.icons.outlined.SecurityUpdateWarning
 import androidx.compose.material.icons.outlined.SpeakerNotesOff
+import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material.icons.outlined.WatchLater
@@ -31,7 +32,7 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.dataStore
+import com.huanchengfly.tieba.post.core.data.dataStore
 import com.huanchengfly.tieba.post.ui.common.prefs.PrefsScreen
 import com.huanchengfly.tieba.post.ui.common.prefs.widgets.ListPref
 import com.huanchengfly.tieba.post.ui.common.prefs.widgets.ListPrefInt
@@ -349,15 +350,31 @@ fun HabitSettingsPage(
             }
             prefsItem {
                 SwitchPref(
+                    key = "show_disagree_btn",
+                    title = stringResource(id = R.string.title_show_disagree_button),
+                    summary = stringResource(id = R.string.summary_show_disagree_button),
+                    defaultChecked = true,
+                ) {
+                    LeadingIcon {
+                        AvatarIcon(
+                            icon = Icons.Outlined.ThumbDown,
+                            size = Sizes.Small,
+                            contentDescription = null,
+                        )
+                    }
+                }
+            }
+            prefsItem {
+                SwitchPref(
                     key = "doNotUsePhotoPicker",
                     title = stringResource(id = R.string.title_do_not_use_photo_picker),
                     summary = {
                         if (!isPhotoPickerAvailable()) {
-                            context.getString(R.string.summary_photo_picker_not_supported)
+                            stringResource(R.string.summary_photo_picker_not_supported)
                         } else if (it) {
-                            context.getString(R.string.summary_do_not_use_photo_picker)
+                            stringResource(R.string.summary_do_not_use_photo_picker)
                         } else {
-                            context.getString(R.string.summary_use_photo_picker)
+                            stringResource(R.string.summary_use_photo_picker)
                         }
                     },
                     defaultChecked = false,

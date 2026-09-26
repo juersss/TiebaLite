@@ -2,12 +2,13 @@ package com.huanchengfly.tieba.post.ui.page.main.explore.personalized
 
 import androidx.compose.runtime.Stable
 import com.huanchengfly.tieba.post.App
-import com.huanchengfly.tieba.post.api.TiebaApi
-import com.huanchengfly.tieba.post.api.models.AgreeBean
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
+import com.huanchengfly.tieba.post.api.TiebaRateLimitedException
 import com.huanchengfly.tieba.post.api.models.CommonResponse
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.personalized.DislikeReason
-import com.huanchengfly.tieba.post.api.models.protos.personalized.PersonalizedResponse
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.personalized.DislikeReason
+import com.huanchengfly.tieba.post.core.network.model.protos.personalized.PersonalizedResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.CommonUiEvent
@@ -18,11 +19,13 @@ import com.huanchengfly.tieba.post.arch.UiEvent
 import com.huanchengfly.tieba.post.arch.UiIntent
 import com.huanchengfly.tieba.post.arch.UiState
 import com.huanchengfly.tieba.post.arch.wrapImmutable
-import com.huanchengfly.tieba.post.models.DislikeBean
+import com.huanchengfly.tieba.post.api.models.DislikeBean
 import com.huanchengfly.tieba.post.repository.PersonalizedRepository
 import com.huanchengfly.tieba.post.ui.models.ThreadItemData
 import com.huanchengfly.tieba.post.ui.models.distinctById
-import com.huanchengfly.tieba.post.utils.appPreferences
+import com.huanchengfly.tieba.post.utils.AgreeOpRunner
+import com.huanchengfly.tieba.post.utils.ListAgreeOutcome
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.utils.FollowedForumsCache
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
@@ -31,8 +34,10 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
@@ -40,25 +45,57 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class PersonalizedViewModel @Inject constructor() :
+class PersonalizedViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<PersonalizedUiIntent, PersonalizedPartialChange, PersonalizedUiState, PersonalizedUiEvent>() {
     override fun createInitialState(): PersonalizedUiState = PersonalizedUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<PersonalizedUiIntent, PersonalizedPartialChange, PersonalizedUiState> =
-        ExplorePartialChangeProducer
+        ExplorePartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: PersonalizedPartialChange): UiEvent? =
         when (partialChange) {
             is PersonalizedPartialChange.Refresh.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
             is PersonalizedPartialChange.LoadMore.Failure -> CommonUiEvent.Toast(partialChange.error.getErrorMessage())
-            is PersonalizedPartialChange.Refresh.Success -> PersonalizedUiEvent.RefreshSuccess(
-                partialChange.data.size
-            )
+            is PersonalizedPartialChange.Refresh.Success -> {
+                // 列表重载:本次返回的 agreeNum 基准已包含已确认操作,对齐标记跟进意图
+                rebaseLoaded(partialChange.data)
+                PersonalizedUiEvent.RefreshSuccess(partialChange.data.size)
+            }
+
+            is PersonalizedPartialChange.Agree.Start -> {
+                // 乐观意图进记录表;显示数字/亮灯由 FeedCard.ThreadAgreeBtn 从 records 推导
+                AgreeOpRunner.onStartAgree(partialChange.threadId, partialChange.hasAgree)
+                null
+            }
+
+            is PersonalizedPartialChange.Agree.Failure -> {
+                // 限流拦截的请求从未 setPending,绝不回退(判定与回滚收口在 runner)
+                AgreeOpRunner.onFailureAgree(partialChange.threadId, partialChange.error)
+                // 列表页点赞失败历来静默(与帖子页 Agree 口径一致),仅限流时提示
+                if (partialChange.error is TiebaRateLimitedException)
+                    CommonUiEvent.Toast(partialChange.error.message.orEmpty())
+                else null
+            }
+
+            is PersonalizedPartialChange.LoadMore.Success -> {
+                rebaseLoaded(partialChange.data); null
+            }
 
             else -> null
         }
 
-    private object ExplorePartialChangeProducer : PartialChangeProducer<PersonalizedUiIntent, PersonalizedPartialChange, PersonalizedUiState> {
+    private fun rebaseLoaded(data: List<ThreadItemData>) {
+        AgreeOpRunner.rebaseLoaded(
+            AgreeParams.OBJ_THREAD,
+            data.map { it.thread.get { threadId } }
+        )
+    }
+
+    private class ExplorePartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) : PartialChangeProducer<PersonalizedUiIntent, PersonalizedPartialChange, PersonalizedUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<PersonalizedUiIntent>): Flow<PersonalizedPartialChange> =
             merge(
@@ -74,12 +111,12 @@ class PersonalizedViewModel @Inject constructor() :
                 .map<PersonalizedResponse, PersonalizedPartialChange.Refresh> { response ->
                     val data = response.toData()
                         .filter {
-                            !App.INSTANCE.appPreferences.blockVideo || it.get { videoInfo } == null
+                            !App.INSTANCE.appPreferences.blockVideo.value || it.get { videoInfo } == null
                         }
                         .filter { it.get { ala_info } == null }
                         // 过滤未关注的吧
                         .filter {
-                            val showFollowedOnly = App.INSTANCE.appPreferences.showFollowedOnly
+                            val showFollowedOnly = App.INSTANCE.appPreferences.showFollowedOnly.value
                             !showFollowedOnly || FollowedForumsCache.isFollowed(it.get { forumId })
                         }
                     val threadPersonalizedData = response.data_?.thread_personalized ?: emptyList()
@@ -101,12 +138,12 @@ class PersonalizedViewModel @Inject constructor() :
                 .map<PersonalizedResponse, PersonalizedPartialChange.LoadMore> { response ->
                     val data = response.toData()
                         .filter {
-                            !App.INSTANCE.appPreferences.blockVideo || it.get { videoInfo } == null
+                            !App.INSTANCE.appPreferences.blockVideo.value || it.get { videoInfo } == null
                         }
                         .filter { it.get { ala_info } == null }
                         // 过滤未关注的吧
                         .filter {
-                            val showFollowedOnly = App.INSTANCE.appPreferences.showFollowedOnly
+                            val showFollowedOnly = App.INSTANCE.appPreferences.showFollowedOnly.value
                             !showFollowedOnly || FollowedForumsCache.isFollowed(it.get { forumId })
                         }
                     val threadPersonalizedData = response.data_?.thread_personalized ?: emptyList()
@@ -124,7 +161,7 @@ class PersonalizedViewModel @Inject constructor() :
                 .catch { emit(PersonalizedPartialChange.LoadMore.Failure(currentPage = page, error = it)) }
 
         private fun PersonalizedUiIntent.Dislike.producePartialChange(): Flow<PersonalizedPartialChange.Dislike> =
-            TiebaApi.getInstance().submitDislikeFlow(
+            tiebaApi.submitDislikeFlow(
                 DislikeBean(
                     threadId.toString(),
                     reasons.joinToString(",") { it.get { dislikeId }.toString() },
@@ -137,18 +174,20 @@ class PersonalizedViewModel @Inject constructor() :
                 .onStart { emit(PersonalizedPartialChange.Dislike.Start(threadId)) }
 
         private fun PersonalizedUiIntent.Agree.producePartialChange(): Flow<PersonalizedPartialChange.Agree> =
-            TiebaApi.getInstance()
-                .opAgreeFlow(
-                    threadId.toString(), postId.toString(), hasAgree, objType = 3
-                )
-                .map<AgreeBean, PersonalizedPartialChange.Agree> {
-                    PersonalizedPartialChange.Agree.Success(
-                        threadId,
-                        hasAgree xor 1
-                    )
+            // 赞踩链路统一收口在 AgreeOpRunner,本页只做中性结果 → PartialChange 的类型映射
+            AgreeOpRunner.threadAgree(threadId, postId, hasAgree, forumId)
+                .map<ListAgreeOutcome, PersonalizedPartialChange.Agree> { outcome ->
+                    when (outcome) {
+                        is ListAgreeOutcome.Started ->
+                            PersonalizedPartialChange.Agree.Start(threadId, outcome.newHasAgree)
+
+                        is ListAgreeOutcome.Accepted ->
+                            PersonalizedPartialChange.Agree.Success(threadId, hasAgree xor 1)
+
+                        is ListAgreeOutcome.Rejected ->
+                            PersonalizedPartialChange.Agree.Failure(threadId, hasAgree, outcome.error)
+                    }
                 }
-                .catch { emit(PersonalizedPartialChange.Agree.Failure(threadId, hasAgree, it)) }
-                .onStart { emit(PersonalizedPartialChange.Agree.Start(threadId, hasAgree xor 1)) }
 
         private fun PersonalizedResponse.toData(): ImmutableList<ImmutableHolder<ThreadInfo>> {
             return (data_?.thread_list ?: emptyList()).wrapImmutable()
@@ -164,7 +203,9 @@ sealed interface PersonalizedUiIntent : UiIntent {
     data class Agree(
         val threadId: Long,
         val postId: Long,
-        val hasAgree: Int
+        val hasAgree: Int,
+        // E1:opAgree 官方必带参数,从 ThreadInfo 透传;null 时不发送
+        val forumId: Long? = null,
     ) : PersonalizedUiIntent
 
     data class Dislike(
@@ -177,60 +218,13 @@ sealed interface PersonalizedUiIntent : UiIntent {
 
 sealed interface PersonalizedPartialChange : PartialChange<PersonalizedUiState> {
     sealed class Agree private constructor() : PersonalizedPartialChange {
-        private fun List<ThreadItemData>.updateAgreeStatus(
-            threadId: Long,
-            hasAgree: Int,
-        ): ImmutableList<ThreadItemData> {
-            return map {
-                val (threadInfo) = it.thread
-                val newThreadInfo = if (threadInfo.threadId == threadId) {
-                    if (threadInfo.agree != null) {
-                        if (hasAgree != threadInfo.agree.hasAgree) {
-                            if (hasAgree == 1) {
-                                threadInfo.copy(
-                                    agreeNum = threadInfo.agreeNum + 1,
-                                    agree = threadInfo.agree.copy(
-                                        agreeNum = threadInfo.agree.agreeNum + 1,
-                                        diffAgreeNum = threadInfo.agree.diffAgreeNum + 1,
-                                        hasAgree = 1
-                                    )
-                                )
-                            } else {
-                                threadInfo.copy(
-                                    agreeNum = threadInfo.agreeNum - 1,
-                                    agree = threadInfo.agree.copy(
-                                        agreeNum = threadInfo.agree.agreeNum - 1,
-                                        diffAgreeNum = threadInfo.agree.diffAgreeNum - 1,
-                                        hasAgree = 0
-                                    )
-                                )
-                            }
-                        } else {
-                            threadInfo
-                        }
-                    } else {
-                        threadInfo.copy(
-                            agreeNum = if (hasAgree == 1) threadInfo.agreeNum + 1 else threadInfo.agreeNum - 1
-                        )
-                    }
-                } else {
-                    threadInfo
-                }
-                it.copy(thread = newThreadInfo.wrapImmutable())
-            }.toImmutableList()
-        }
-
+        // 差分模型:显示由 FeedCard.ThreadAgreeBtn 从 OpRecordStore.records 推导,
+        // reducer 不再改写 proto 计数;记录更新全部集中在 dispatchEvent
         override fun reduce(oldState: PersonalizedUiState): PersonalizedUiState =
             when (this) {
-                is Start -> {
-                    oldState.copy(data = oldState.data.updateAgreeStatus(threadId, hasAgree))
-                }
-                is Success -> {
-                    oldState.copy(data = oldState.data.updateAgreeStatus(threadId, hasAgree))
-                }
-                is Failure -> {
-                    oldState.copy(data = oldState.data.updateAgreeStatus(threadId, hasAgree))
-                }
+                is Start -> oldState
+                is Success -> oldState
+                is Failure -> oldState
             }
 
         data class Start(

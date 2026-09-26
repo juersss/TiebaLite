@@ -3,13 +3,14 @@ package com.huanchengfly.tieba.post.ui.page.user.post
 import androidx.compose.runtime.Immutable
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.TiebaApi
-import com.huanchengfly.tieba.post.api.models.AgreeBean
-import com.huanchengfly.tieba.post.api.models.protos.PostInfoList
-import com.huanchengfly.tieba.post.api.models.protos.abstractText
-import com.huanchengfly.tieba.post.api.models.protos.updateAgreeStatus
-import com.huanchengfly.tieba.post.api.models.protos.userPost.UserPostResponse
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
+import com.huanchengfly.tieba.post.core.network.model.protos.PostInfoList
+import com.huanchengfly.tieba.post.core.network.model.protos.abstractText
+import com.huanchengfly.tieba.post.core.network.model.protos.userPost.UserPostResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
+import com.huanchengfly.tieba.post.utils.AgreeOpRunner
+import com.huanchengfly.tieba.post.utils.ListAgreeOutcome
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.CommonUiEvent
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
@@ -34,26 +35,56 @@ import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 
 @HiltViewModel
-class UserPostViewModel @Inject constructor() :
+class UserPostViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<UserPostUiIntent, UserPostPartialChange, UserPostUiState, UiEvent>() {
     override fun createInitialState(): UserPostUiState = UserPostUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<UserPostUiIntent, UserPostPartialChange, UserPostUiState> =
-        UserPostPartialChangeProducer
+        UserPostPartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: UserPostPartialChange): UiEvent? =
         when (partialChange) {
-            is UserPostPartialChange.Agree.Failure -> CommonUiEvent.Toast(
-                App.INSTANCE.getString(
-                    R.string.toast_agree_failed,
-                    partialChange.error.getErrorMessage()
+            is UserPostPartialChange.Agree.Start -> {
+                // 乐观意图进记录表;显示数字/亮灯由 FeedCard.ThreadAgreeBtn 从 records 推导
+                AgreeOpRunner.onStartAgree(partialChange.threadId, partialChange.hasAgree)
+                null
+            }
+
+            is UserPostPartialChange.Agree.Failure -> {
+                // 限流拦截的请求从未 setPending,绝不回退(判定与回滚收口在 runner)
+                AgreeOpRunner.onFailureAgree(partialChange.threadId, partialChange.error)
+                CommonUiEvent.Toast(
+                    App.INSTANCE.getString(
+                        R.string.toast_agree_failed,
+                        partialChange.error.getErrorMessage()
+                    )
                 )
-            )
+            }
+
+            // 列表重载:本次返回的 agree_num 基准已包含已确认操作,对齐标记跟进意图
+            is UserPostPartialChange.Refresh.Success -> {
+                rebaseLoaded(partialChange.posts); null
+            }
+
+            is UserPostPartialChange.LoadMore.Success -> {
+                rebaseLoaded(partialChange.posts); null
+            }
 
             else -> null
         }
 
-    private object UserPostPartialChangeProducer :
+    private fun rebaseLoaded(posts: List<PostInfoList>) {
+        AgreeOpRunner.rebaseLoaded(
+            AgreeParams.OBJ_THREAD,
+            posts.map { it.thread_id }
+        )
+    }
+
+    private class UserPostPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<UserPostUiIntent, UserPostPartialChange, UserPostUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<UserPostUiIntent>): Flow<UserPostPartialChange> =
@@ -67,27 +98,27 @@ class UserPostViewModel @Inject constructor() :
             )
 
         private fun UserPostUiIntent.Refresh.toPartialChangeFlow(): Flow<UserPostPartialChange> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .userPostFlow(uid, 1, isThread)
                 .map<UserPostResponse, UserPostPartialChange.Refresh> {
                     checkNotNull(it.data_)
-                    val postList = it.data_.post_list
+                    val postList = it.data_!!.post_list
                     UserPostPartialChange.Refresh.Success(
                         currentPage = 1,
                         hasMore = postList.isNotEmpty(),
                         posts = postList,
-                        hidePost = it.data_.hide_post == 1
+                        hidePost = it.data_!!.hide_post == 1
                     )
                 }
                 .onStart { emit(UserPostPartialChange.Refresh.Start) }
                 .catch { emit(UserPostPartialChange.Refresh.Failure(it)) }
 
         private fun UserPostUiIntent.LoadMore.toPartialChangeFlow(): Flow<UserPostPartialChange> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .userPostFlow(uid, page + 1, isThread)
                 .map<UserPostResponse, UserPostPartialChange.LoadMore> {
                     checkNotNull(it.data_)
-                    val postList = it.data_.post_list
+                    val postList = it.data_!!.post_list
                     UserPostPartialChange.LoadMore.Success(
                         currentPage = page + 1,
                         hasMore = postList.isNotEmpty(),
@@ -98,23 +129,26 @@ class UserPostViewModel @Inject constructor() :
                 .catch { emit(UserPostPartialChange.LoadMore.Failure(it)) }
 
         private fun UserPostUiIntent.Agree.toPartialChangeFlow(): Flow<UserPostPartialChange.Agree> =
-            TiebaApi.getInstance()
-                .opAgreeFlow(
-                    threadId.toString(), postId.toString(), hasAgree, objType = 3
-                )
-                .map<AgreeBean, UserPostPartialChange.Agree> {
-                    UserPostPartialChange.Agree.Success(threadId, postId, hasAgree xor 1)
+            // 赞踩链路统一收口在 AgreeOpRunner,本页只做中性结果 → PartialChange 的类型映射。
+            // 记录键用 OBJ_THREAD+threadId——与 FeedCard.ThreadAgreeBtn 的显示键一致
+            AgreeOpRunner.threadAgree(threadId, postId, hasAgree, forumId)
+                .map<ListAgreeOutcome, UserPostPartialChange.Agree> { outcome ->
+                    when (outcome) {
+                        is ListAgreeOutcome.Started ->
+                            UserPostPartialChange.Agree.Start(threadId, postId, outcome.newHasAgree)
+
+                        is ListAgreeOutcome.Accepted ->
+                            UserPostPartialChange.Agree.Success(threadId, postId, hasAgree xor 1)
+
+                        is ListAgreeOutcome.Rejected ->
+                            UserPostPartialChange.Agree.Failure(
+                                threadId,
+                                postId,
+                                hasAgree,
+                                outcome.error
+                            )
+                    }
                 }
-                .onStart {
-                    emit(
-                        UserPostPartialChange.Agree.Start(
-                            threadId,
-                            postId,
-                            hasAgree xor 1
-                        )
-                    )
-                }
-                .catch { emit(UserPostPartialChange.Agree.Failure(threadId, postId, hasAgree, it)) }
     }
 }
 
@@ -134,6 +168,8 @@ sealed interface UserPostUiIntent : UiIntent {
         val threadId: Long,
         val postId: Long,
         val hasAgree: Int,
+        // E1:opAgree 官方必带参数,从 ThreadInfo 透传;null 时不发送
+        val forumId: Long? = null,
     ) : UserPostUiIntent
 }
 
@@ -217,54 +253,13 @@ sealed interface UserPostPartialChange : PartialChange<UserPostUiState> {
     }
 
     sealed class Agree : UserPostPartialChange {
-        private fun List<PostListItemData>.updateAgreeStatus(
-            threadId: Long,
-            postId: Long,
-            hasAgree: Int,
-        ): ImmutableList<PostListItemData> {
-            return map {
-                val (postInfo) = it
-                it.copy(
-                    data = if (postInfo.get { thread_id } == threadId && postInfo.get { post_id } == postId) {
-                        postInfo.getImmutable { updateAgreeStatus(hasAgree) }
-                    } else {
-                        postInfo
-                    }
-                )
-            }.toImmutableList()
-        }
-
+        // 差分模型:显示由 FeedCard.ThreadAgreeBtn 从 OpRecordStore.records 推导,
+        // reducer 不再改写 proto 计数;记录更新全部集中在 dispatchEvent
         override fun reduce(oldState: UserPostUiState): UserPostUiState =
             when (this) {
-                is Start -> {
-                    oldState.copy(
-                        posts = oldState.posts.updateAgreeStatus(
-                            threadId,
-                            postId,
-                            hasAgree
-                        )
-                    )
-                }
-
-                is Success -> {
-                    oldState.copy(
-                        posts = oldState.posts.updateAgreeStatus(
-                            threadId,
-                            postId,
-                            hasAgree
-                        )
-                    )
-                }
-
-                is Failure -> {
-                    oldState.copy(
-                        posts = oldState.posts.updateAgreeStatus(
-                            threadId,
-                            postId,
-                            hasAgree
-                        )
-                    )
-                }
+                is Start -> oldState
+                is Success -> oldState
+                is Failure -> oldState
             }
 
         data class Start(
