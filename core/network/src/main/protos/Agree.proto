@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package tieba;
+
+option java_package = "com.huanchengfly.tieba.post.core.network.model.protos";
+
+message Agree {
+  int64 agreeNum = 1;
+  int32 hasAgree = 2;
+  int32 agreeType = 3;
+  int64 disagreeNum = 4;
+  int64 diffAgreeNum = 5;
+  // 官方 tag 6 = lz_agree(楼主是否赞过,服务端下发)。本仓历史版本曾把它占作
+  // 本地"我是否点过踩"标志(字段号撞车,定时炸弹:任何人日后读取都会拿到
+  // "楼主赞过"却当成"我踩过"),2026-09-12 归还官方语义并迁出本地标志。
+  int32 lzAgree = 6;
+  // 官方 tag 7 = agree_resource,wire type 未逆向确认,先 reserved 防止将来占用
+  reserved 7;
+  // 客户端本地乐观标志"我是否点过踩":从官方 tag6 迁到空闲 tag8(当前无读写点,
+  // 权威状态以 OpRecordStore 记录表为准,此字段仅保持历史兼容)
+  int32 hasDisagree = 8;
+}
