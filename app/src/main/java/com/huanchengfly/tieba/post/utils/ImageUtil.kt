@@ -1,6 +1,7 @@
 package com.huanchengfly.tieba.post.utils
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -33,6 +34,7 @@ import com.github.panpf.sketch.request.enqueue
 import com.github.panpf.sketch.request.execute
 import com.github.panpf.sketch.transform.CircleCropTransformation
 import com.github.panpf.sketch.transform.RoundedCornersTransformation
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.App.Companion.INSTANCE
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.dpToPxFloat
@@ -51,7 +53,6 @@ import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.nio.channels.FileChannel
 
 object ImageUtil {
     /**
@@ -127,15 +128,11 @@ object ImageUtil {
             bitmap.compress(CompressFormat.JPEG, quality, baos) //这里压缩options%，把压缩后的数据存放到baos中
         }
         try {
-            val fos = FileOutputStream(output)
-            try {
+            FileOutputStream(output).use { fos ->
                 fos.write(baos.toByteArray())
                 fos.flush()
-                fos.close()
-            } catch (e: IOException) {
-                e.printStackTrace()
             }
-        } catch (e: FileNotFoundException) {
+        } catch (e: IOException) {
             e.printStackTrace()
         }
         return output
@@ -150,15 +147,11 @@ object ImageUtil {
         val baos = ByteArrayOutputStream()
         bitmap.compress(format, 100, baos)
         try {
-            val fos = FileOutputStream(output)
-            try {
+            FileOutputStream(output).use { fos ->
                 fos.write(baos.toByteArray())
                 fos.flush()
-                fos.close()
-            } catch (e: IOException) {
-                e.printStackTrace()
             }
-        } catch (e: FileNotFoundException) {
+        } catch (e: IOException) {
             e.printStackTrace()
         }
         return output
@@ -179,21 +172,19 @@ object ImageUtil {
         if (src == null || dest == null) {
             return false
         }
-        val srcChannel: FileChannel?
-        val dstChannel: FileChannel?
         try {
-            srcChannel = src.channel
-            dstChannel = dest.channel
-            srcChannel.transferTo(0, srcChannel.size(), dstChannel)
+            src.use { s ->
+                dest.use { d ->
+                    s.channel.use { srcChannel ->
+                        d.channel.use { dstChannel ->
+                            srcChannel.transferTo(0, srcChannel.size(), dstChannel)
+                        }
+                    }
+                }
+            }
         } catch (e: IOException) {
             e.printStackTrace()
             return false
-        }
-        try {
-            srcChannel.close()
-            dstChannel.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
         }
         return true
     }
@@ -210,21 +201,15 @@ object ImageUtil {
         } catch (e: IOException) {
             e.printStackTrace()
         }
-        val srcChannel: FileChannel?
-        val dstChannel: FileChannel?
         try {
-            srcChannel = FileInputStream(src).channel
-            dstChannel = FileOutputStream(dest).channel
-            srcChannel.transferTo(0, srcChannel.size(), dstChannel)
+            FileInputStream(src).channel.use { srcChannel ->
+                FileOutputStream(dest).channel.use { dstChannel ->
+                    srcChannel.transferTo(0, srcChannel.size(), dstChannel)
+                }
+            }
         } catch (e: IOException) {
             e.printStackTrace()
             return false
-        }
-        try {
-            srcChannel.close()
-            dstChannel.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
         }
         return true
     }
@@ -248,36 +233,44 @@ object ImageUtil {
     private fun downloadForShare(context: Context, url: String?, taskCallback: ShareTaskCallback) {
         if (url == null) return
         CoroutineScope(Dispatchers.IO).launch {
-            val downloadResult = DownloadRequest(context, url).execute()
-            if (downloadResult is DownloadResult.Success) {
-                val inputStream = downloadResult.data.data.newInputStream()
-                val pictureFolder = File(context.cacheDir, ".shareTemp")
-                if (pictureFolder.exists() || pictureFolder.mkdirs()) {
-                    val fileName = "share_" + System.currentTimeMillis()
-                    val destFile = File(pictureFolder, fileName)
-                    if (!destFile.exists()) {
-                        withContext(Dispatchers.IO) {
-                            destFile.createNewFile()
-                        }
-                    }
-                    inputStream.use { input ->
-                        if (destFile.canWrite()) {
-                            destFile.outputStream().use { output ->
-                                input.copyTo(output)
+            // 兜底(R7-⑤同族,09-06):fire-and-forget 协程体异常无 handler 会崩进程,
+            // 下载/分享失败静默(用户重试即可),与 R5-F1 口径一致
+            runCatching {
+                val downloadResult = DownloadRequest(context, url).execute()
+                if (downloadResult is DownloadResult.Success) {
+                    val inputStream = downloadResult.data.data.newInputStream()
+                    val pictureFolder = File(context.cacheDir, ".shareTemp")
+                    if (pictureFolder.exists() || pictureFolder.mkdirs()) {
+                        val fileName = "share_" + System.currentTimeMillis()
+                        val destFile = File(pictureFolder, fileName)
+                        if (!destFile.exists()) {
+                            withContext(Dispatchers.IO) {
+                                destFile.createNewFile()
                             }
                         }
-                    }
-                    val shareUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        FileProvider.getUriForFile(
-                            context,
-                            context.packageName + ".share.FileProvider",
-                            destFile
-                        )
-                    } else {
-                        Uri.fromFile(destFile)
-                    }
-                    withContext(Dispatchers.Main) {
-                        taskCallback.onGetUri(shareUri)
+                        inputStream.use { input ->
+                            if (destFile.canWrite()) {
+                                destFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                        val shareUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            FileProvider.getUriForFile(
+                                context,
+                                context.packageName + ".share.FileProvider",
+                                destFile
+                            )
+                        } else {
+                            Uri.fromFile(destFile)
+                        }
+                        withContext(Dispatchers.Main) {
+                            // 回调前校验宿主存活:下载期间页面可能已退出,向已销毁的
+                            // Activity 起分享面板会抛异常/弹孤儿面板
+                            if (context !is Activity || (!context.isFinishing && !context.isDestroyed)) {
+                                taskCallback.onGetUri(shareUri)
+                            }
+                        }
                     }
                 }
             }
@@ -319,48 +312,51 @@ object ImageUtil {
             return
         }
         CoroutineScope(Dispatchers.IO).launch {
-            val downloadResult = DownloadRequest(context, url).execute()
-            if (downloadResult is DownloadResult.Success) {
-                var mimeType = MimeType.JPEG.toString()
-                var fileName = URLUtil.guessFileName(url, null, mimeType)
-                downloadResult.data.data.newInputStream().use { inputStream ->
-                    if (isGifFile(inputStream)) {
-                        mimeType = MimeType.GIF.toString()
-                        fileName = FileUtil.changeFileExtension(fileName, ".gif")
+            // 兜底(R7-⑤同族,09-06):下载/存相册链路异常静默,不崩进程
+            runCatching {
+                val downloadResult = DownloadRequest(context, url).execute()
+                if (downloadResult is DownloadResult.Success) {
+                    var mimeType = MimeType.JPEG.toString()
+                    var fileName = URLUtil.guessFileName(url, null, mimeType)
+                    downloadResult.data.data.newInputStream().use { inputStream ->
+                        if (isGifFile(inputStream)) {
+                            mimeType = MimeType.GIF.toString()
+                            fileName = FileUtil.changeFileExtension(fileName, ".gif")
+                        }
                     }
-                }
-                downloadResult.data.data.newInputStream().use { inputStream ->
-                    val relativePath =
-                        Environment.DIRECTORY_PICTURES + File.separator + FileUtil.FILE_FOLDER
-                    val values = ContentValues().apply {
-                        put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
-                        put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-                        put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                        put(MediaStore.Images.Media.DESCRIPTION, fileName)
-                    }
-                    val cr = context.contentResolver
-                    val uri: Uri = runCatching {
-                        cr.insert(
-                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                            values
-                        )
-                    }.getOrNull() ?: return@launch
-                    try {
-                        cr.openFileDescriptor(uri, "w")?.use {
-                            FileOutputStream(it.fileDescriptor).use { outputStream ->
-                                inputStream.copyTo(outputStream)
+                    downloadResult.data.data.newInputStream().use { inputStream ->
+                        val relativePath =
+                            Environment.DIRECTORY_PICTURES + File.separator + FileUtil.FILE_FOLDER
+                        val values = ContentValues().apply {
+                            put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+                            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                            put(MediaStore.Images.Media.DESCRIPTION, fileName)
+                        }
+                        val cr = context.contentResolver
+                        val uri: Uri = runCatching {
+                            cr.insert(
+                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                values
+                            )
+                        }.getOrNull() ?: return@launch
+                        try {
+                            cr.openFileDescriptor(uri, "w")?.use {
+                                FileOutputStream(it.fileDescriptor).use { outputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
                             }
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_photo_saved, relativePath),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            cr.delete(uri, null, null)
                         }
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.toast_photo_saved, relativePath),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        cr.delete(uri, null, null)
                     }
                 }
             }
@@ -369,42 +365,45 @@ object ImageUtil {
 
     private fun downloadBelowQ(context: Context, url: String?) {
         CoroutineScope(Dispatchers.IO).launch {
-            val downloadResult = DownloadRequest(context, url).execute()
-            if (downloadResult is DownloadResult.Success) {
-                var fileName = URLUtil.guessFileName(url, null, MimeType.JPEG.toString())
-                downloadResult.data.data.newInputStream().use { inputStream ->
-                    if (isGifFile(inputStream)) {
-                        fileName = FileUtil.changeFileExtension(fileName, ".gif")
+            // 兜底(R7-⑤同族,09-06):同 downloadAboveQ
+            runCatching {
+                val downloadResult = DownloadRequest(context, url).execute()
+                if (downloadResult is DownloadResult.Success) {
+                    var fileName = URLUtil.guessFileName(url, null, MimeType.JPEG.toString())
+                    downloadResult.data.data.newInputStream().use { inputStream ->
+                        if (isGifFile(inputStream)) {
+                            fileName = FileUtil.changeFileExtension(fileName, ".gif")
+                        }
                     }
-                }
-                downloadResult.data.data.newInputStream().use { inputStream ->
-                    val pictureFolder =
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                    val appDir = File(pictureFolder, FileUtil.FILE_FOLDER)
-                    val dirExists =
-                        withContext(Dispatchers.IO) { appDir.exists() || appDir.mkdirs() }
-                    if (dirExists) {
-                        val destFile = File(appDir, fileName)
-                        if (!destFile.exists()) {
-                            withContext(Dispatchers.IO) {
-                                destFile.createNewFile()
+                    downloadResult.data.data.newInputStream().use { inputStream ->
+                        val pictureFolder =
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                        val appDir = File(pictureFolder, FileUtil.FILE_FOLDER)
+                        val dirExists =
+                            withContext(Dispatchers.IO) { appDir.exists() || appDir.mkdirs() }
+                        if (dirExists) {
+                            val destFile = File(appDir, fileName)
+                            if (!destFile.exists()) {
+                                withContext(Dispatchers.IO) {
+                                    destFile.createNewFile()
+                                }
                             }
-                        }
-                        destFile.outputStream().use { outputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-                        context.sendBroadcast(
-                            Intent(
-                                Intent.ACTION_MEDIA_SCANNER_SCAN_FILE,
-                                Uri.fromFile(File(destFile.path))
+                            destFile.outputStream().use { outputStream ->
+                                inputStream.copyTo(outputStream)
+                            }
+                            context.sendBroadcast(
+                                Intent(
+                                    Intent.ACTION_MEDIA_SCANNER_SCAN_FILE,
+                                    Uri.fromFile(File(destFile.path))
+                                )
                             )
-                        )
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.toast_photo_saved, destFile.path),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_photo_saved, destFile.path),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     }
                 }
@@ -444,7 +443,7 @@ object ImageUtil {
     }
 
     private fun getRadiusDp(context: Context): Int {
-        return context.appPreferences.radius
+        return context.appPreferences.radius.value
     }
 
     fun clear(imageView: ImageView?) {
@@ -569,32 +568,15 @@ object ImageUtil {
 
     @get:ImageLoadSettings
     private val imageLoadSettings: Int
-        get() = INSTANCE.appPreferences.imageLoadType!!.toInt()
+        get() = INSTANCE.appPreferences.imageLoadType.value!!.toInt()
 
-    fun imageToBase64(inputStream: InputStream?): String? {
-        if (inputStream == null) {
-            return null
-        }
-        return runCatching {
-            inputStream.use {
-                Base64.encodeToString(inputStream.readBytes(), Base64.DEFAULT)
-            }
-        }.getOrNull()
-    }
+    /** 转发到 api 层实现（3b-prep-2）：发图链路共用同一份 base64 逻辑 */
+    fun imageToBase64(inputStream: InputStream?): String? =
+        com.huanchengfly.tieba.post.api.internal.ApiEncoding.imageToBase64(inputStream)
 
-    fun imageToBase64(file: File?): String? {
-        if (file == null) {
-            return null
-        }
-        var result: String? = null
-        try {
-            val `is`: InputStream = FileInputStream(file)
-            result = imageToBase64(`is`)
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
-        return result
-    }
+    /** 同上 */
+    fun imageToBase64(file: File?): String? =
+        com.huanchengfly.tieba.post.api.internal.ApiEncoding.imageToBase64(file)
 
     interface ShareTaskCallback {
         fun onGetUri(uri: Uri)

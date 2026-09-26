@@ -67,9 +67,14 @@ fun PullToRefreshLayout(
         with(density) { refreshingOffset.toPx() }
     }
 
+    // confirm lambda 由 rememberSwipeableState 单次构造固化(vendored Swipeable 的
+    // rememberSaveable),直接捕获普通参数会冻结首帧的 refreshing=false——刷新进行中
+    // 再次下拉会重复 onRefresh(R10-F1)。与 LoadMore 同口径经 rememberUpdatedState 读 live 值
+    val curRefreshing by rememberUpdatedState(newValue = refreshing)
+    val curOnRefresh by rememberUpdatedState(newValue = onRefresh)
     val swipeableState = rememberSwipeableState(false) {
-        if (it && !refreshing) {
-            onRefresh()
+        if (it && !curRefreshing) {
+            curOnRefresh()
         }
         false
     }
