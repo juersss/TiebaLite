@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.Scaffold
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.protos.topicList.NewTopicList
+import com.huanchengfly.tieba.post.core.network.model.protos.topicList.NewTopicList
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
 import com.huanchengfly.tieba.post.arch.pageViewModel
 import com.huanchengfly.tieba.post.ui.common.theme.compose.ExtendedTheme

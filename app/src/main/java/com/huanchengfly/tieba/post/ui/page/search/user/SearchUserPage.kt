@@ -229,7 +229,7 @@ private fun SearchUserItem(
             )
             if (!item.intro.isNullOrEmpty()) {
                 Text(
-                    text = item.intro,
+                    text = item.intro!!,
                     style = MaterialTheme.typography.body2,
                     maxLines = 1
                 )

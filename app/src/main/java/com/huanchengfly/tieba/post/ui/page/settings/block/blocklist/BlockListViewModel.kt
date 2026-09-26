@@ -3,7 +3,7 @@ package com.huanchengfly.tieba.post.ui.page.settings.block.blocklist
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.*
 import com.huanchengfly.tieba.post.models.database.Block
-import com.huanchengfly.tieba.post.toJson
+import com.huanchengfly.tieba.post.core.common.toJson
 import com.huanchengfly.tieba.post.utils.BlockManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*

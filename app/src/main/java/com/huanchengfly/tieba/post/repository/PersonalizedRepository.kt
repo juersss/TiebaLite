@@ -19,8 +19,8 @@ object PersonalizedRepository {
                         ?: emptyList()
                 response.copy(
                     data_ = response.data_?.copy(
-                        thread_list = response.data_.thread_list.filter { !liveThreadIds.contains(it.id) },
-                        thread_personalized = response.data_.thread_personalized.filter {
+                        thread_list = response.data_!!.thread_list.filter { !liveThreadIds.contains(it.id) },
+                        thread_personalized = response.data_!!.thread_personalized.filter {
                             !liveThreadIds.contains(
                                 it.tid
                             )

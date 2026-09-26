@@ -128,6 +128,10 @@
 
 -keep class com.huanchengfly.tieba.post.models.** { *; }
 -keep class com.huanchengfly.tieba.post.api.models.** { *; }
+# Phase 3b-move:api 树手写 models 的包名未动(上一条仍覆盖),但 protos 包(wire 生成类
+# 与 AgreeOp/Extensions 手写件)的 java_package 已改到 core.network.model.protos——
+# 原先被 api.models.** 顺带 keep 的范围必须显式续上,保持收缩口径与搬迁前一致。
+-keep class com.huanchengfly.tieba.post.core.network.model.protos.** { *; }
 
 -keep public class com.huanchengfly.tieba.post.utils.TiebaLiteJavaScript { *; }
 

@@ -24,7 +24,7 @@ import com.huanchengfly.tieba.post.arch.collectPartialAsState
 import com.huanchengfly.tieba.post.arch.onEvent
 import com.huanchengfly.tieba.post.arch.onGlobalEvent
 import com.huanchengfly.tieba.post.arch.pageViewModel
-import com.huanchengfly.tieba.post.fromJson
+import com.huanchengfly.tieba.post.core.common.fromJson
 import com.huanchengfly.tieba.post.models.ThreadHistoryInfoBean
 import com.huanchengfly.tieba.post.models.database.History
 import com.huanchengfly.tieba.post.ui.common.theme.compose.ExtendedTheme
@@ -141,7 +141,7 @@ fun HistoryListPage(
 
                                     HistoryUtil.TYPE_THREAD -> {
                                         val extra =
-                                            if (it.extras != null) it.extras.fromJson<ThreadHistoryInfoBean>() else null
+                                            if (it.extras != null) it.extras!!.fromJson<ThreadHistoryInfoBean>() else null
                                         navigator.navigate(
                                             ThreadPageDestination(
                                                 it.data.toLong(),
@@ -184,7 +184,7 @@ fun HistoryListPage(
 
                                     HistoryUtil.TYPE_THREAD -> {
                                         val extra =
-                                            if (it.extras != null) it.extras.fromJson<ThreadHistoryInfoBean>() else null
+                                            if (it.extras != null) it.extras!!.fromJson<ThreadHistoryInfoBean>() else null
                                         navigator.navigate(
                                             ThreadPageDestination(
                                                 it.data.toLong(),

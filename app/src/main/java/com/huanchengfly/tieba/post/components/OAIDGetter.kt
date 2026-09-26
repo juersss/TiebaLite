@@ -6,7 +6,7 @@ import android.os.Bundle
 import com.github.gzuliyujiang.oaid.DeviceID
 import com.github.gzuliyujiang.oaid.IGetter
 import com.huanchengfly.tieba.post.App
-import com.huanchengfly.tieba.post.utils.helios.Base32
+import com.huanchengfly.tieba.post.core.common.helios.Base32
 
 object OAIDGetter : Application.ActivityLifecycleCallbacks, IGetter {
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}

@@ -1,11 +1,11 @@
 package com.huanchengfly.tieba.post.ui.page.forum.rule
 
 import androidx.compose.runtime.Immutable
-import com.huanchengfly.tieba.post.api.TiebaApi
-import com.huanchengfly.tieba.post.api.models.protos.BawuRoleInfoPub
-import com.huanchengfly.tieba.post.api.models.protos.ForumRule
-import com.huanchengfly.tieba.post.api.models.protos.forumRuleDetail.ForumRuleDetailResponse
-import com.huanchengfly.tieba.post.api.models.protos.renders
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
+import com.huanchengfly.tieba.post.core.network.model.protos.BawuRoleInfoPub
+import com.huanchengfly.tieba.post.core.network.model.protos.ForumRule
+import com.huanchengfly.tieba.post.core.network.model.protos.forumRuleDetail.ForumRuleDetailResponse
+import com.huanchengfly.tieba.post.ui.common.renders
 import com.huanchengfly.tieba.post.arch.BaseViewModel
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
 import com.huanchengfly.tieba.post.arch.PartialChange
@@ -30,14 +30,18 @@ import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 
 @HiltViewModel
-class ForumRuleDetailViewModel @Inject constructor() :
+class ForumRuleDetailViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<ForumRuleDetailUiIntent, ForumRuleDetailPartialChange, ForumRuleDetailUiState, UiEvent>() {
     override fun createInitialState(): ForumRuleDetailUiState = ForumRuleDetailUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<ForumRuleDetailUiIntent, ForumRuleDetailPartialChange, ForumRuleDetailUiState> =
-        ForumRuleDetailPartialChangeProducer
+        ForumRuleDetailPartialChangeProducer(tiebaApi)
 
-    private object ForumRuleDetailPartialChangeProducer :
+    private class ForumRuleDetailPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<ForumRuleDetailUiIntent, ForumRuleDetailPartialChange, ForumRuleDetailUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<ForumRuleDetailUiIntent>): Flow<ForumRuleDetailPartialChange> =
@@ -47,17 +51,17 @@ class ForumRuleDetailViewModel @Inject constructor() :
             )
 
         private fun ForumRuleDetailUiIntent.Load.producePartialChange(): Flow<ForumRuleDetailPartialChange.Load> =
-            TiebaApi.getInstance()
+            tiebaApi
                 .forumRuleDetailFlow(forumId)
                 .map<ForumRuleDetailResponse, ForumRuleDetailPartialChange.Load> { response ->
                     checkNotNull(response.data_)
-                    checkNotNull(response.data_.bazhu)
+                    checkNotNull(response.data_!!.bazhu)
                     ForumRuleDetailPartialChange.Load.Success(
-                        title = response.data_.title,
-                        publishTime = response.data_.publish_time,
-                        preface = response.data_.preface,
-                        data = response.data_.rules.map { it.toData() }.toImmutableList(),
-                        author = response.data_.bazhu
+                        title = response.data_!!.title,
+                        publishTime = response.data_!!.publish_time,
+                        preface = response.data_!!.preface,
+                        data = response.data_!!.rules.map { it.toData() }.toImmutableList(),
+                        author = response.data_!!.bazhu!!
                     )
                 }
                 .onStart { emit(ForumRuleDetailPartialChange.Load.Start) }

@@ -46,9 +46,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.protos.ThreadInfo
-import com.huanchengfly.tieba.post.api.models.protos.User
-import com.huanchengfly.tieba.post.api.models.protos.personalized.DislikeReason
+import com.huanchengfly.tieba.post.utils.OpRecordStore
+import com.huanchengfly.tieba.post.api.AgreeParams
+import com.huanchengfly.tieba.post.core.network.model.protos.ThreadInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.User
+import com.huanchengfly.tieba.post.core.network.model.protos.personalized.DislikeReason
+import com.huanchengfly.tieba.post.core.network.model.protos.MyAgreeOp
+import com.huanchengfly.tieba.post.core.network.model.protos.serverEchoOp
 import com.huanchengfly.tieba.post.arch.CommonUiEvent.ScrollToTop.bindScrollToTopEvent
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
@@ -217,7 +221,12 @@ fun PersonalizedPage(
                             PersonalizedUiIntent.Agree(
                                 it.threadId,
                                 it.firstPostId,
-                                it.agree?.hasAgree ?: 0
+                                OpRecordStore.agreeFlag(
+                                    AgreeParams.OBJ_THREAD, it.threadId,
+                                    if (it.agree?.serverEchoOp() == MyAgreeOp.AGREE) 1 else 0
+                                ),
+                                // E1:opAgree 官方必带 forum_id
+                                forumId = it.forumId
                             )
                         )
                     },

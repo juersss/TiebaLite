@@ -1,9 +1,10 @@
 package com.huanchengfly.tieba.post.utils
 
+import com.huanchengfly.tieba.post.api.params.UIDUtil
 import android.util.Base64
 import com.huanchengfly.tieba.post.api.models.SofireResponseData
 import com.huanchengfly.tieba.post.api.retrofit.RetrofitTiebaApi
-import com.huanchengfly.tieba.post.toMD5
+import com.huanchengfly.tieba.post.core.common.toMD5
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -19,6 +20,8 @@ import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.random.Random
+import com.huanchengfly.tieba.post.core.common.gzipCompress
+import com.huanchengfly.tieba.post.core.common.rc442Crypt
 
 @Serializable
 data class SofireRequestBody(

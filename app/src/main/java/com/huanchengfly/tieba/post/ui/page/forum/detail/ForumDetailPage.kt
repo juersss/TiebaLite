@@ -31,9 +31,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.protos.PbContent
-import com.huanchengfly.tieba.post.api.models.protos.RecommendForumInfo
-import com.huanchengfly.tieba.post.api.models.protos.plainText
+import com.huanchengfly.tieba.post.core.network.model.protos.PbContent
+import com.huanchengfly.tieba.post.core.network.model.protos.RecommendForumInfo
+import com.huanchengfly.tieba.post.ui.common.plainText
 import com.huanchengfly.tieba.post.arch.ImmutableHolder
 import com.huanchengfly.tieba.post.arch.collectPartialAsState
 import com.huanchengfly.tieba.post.arch.getOrNull

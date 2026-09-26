@@ -1,11 +1,11 @@
 package com.huanchengfly.tieba.post.ui.page.forum
 
 import androidx.compose.runtime.Stable
-import com.huanchengfly.tieba.post.api.TiebaApi
+import com.huanchengfly.tieba.post.api.interfaces.ITiebaApi
 import com.huanchengfly.tieba.post.api.models.CommonResponse
 import com.huanchengfly.tieba.post.api.models.LikeForumResultBean
-import com.huanchengfly.tieba.post.api.models.protos.frsPage.ForumInfo
-import com.huanchengfly.tieba.post.api.models.protos.frsPage.NavTabInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.frsPage.ForumInfo
+import com.huanchengfly.tieba.post.core.network.model.protos.frsPage.NavTabInfo
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorCode
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
 import com.huanchengfly.tieba.post.arch.BaseViewModel
@@ -31,12 +31,14 @@ import javax.inject.Inject
 
 @Stable
 @HiltViewModel
-class ForumViewModel @Inject constructor() :
+class ForumViewModel @Inject constructor(
+    private val tiebaApi: ITiebaApi,
+) :
     BaseViewModel<ForumUiIntent, ForumPartialChange, ForumUiState, ForumUiEvent>() {
     override fun createInitialState(): ForumUiState = ForumUiState()
 
     override fun createPartialChangeProducer(): PartialChangeProducer<ForumUiIntent, ForumPartialChange, ForumUiState> =
-        ForumPartialChangeProducer
+        ForumPartialChangeProducer(tiebaApi)
 
     override fun dispatchEvent(partialChange: ForumPartialChange): UiEvent? {
         return when (partialChange) {
@@ -50,7 +52,9 @@ class ForumViewModel @Inject constructor() :
                 partialChange.error.getErrorMessage()
             )
 
-            is ForumPartialChange.Like.Success -> ForumUiEvent.Like.Success(partialChange.data.info.memberSum)
+            is ForumPartialChange.Like.Success -> ForumUiEvent.Like.Success(
+                partialChange.data.info?.memberSum.orEmpty()
+            )
             is ForumPartialChange.Like.Failure -> ForumUiEvent.Like.Failure(
                 partialChange.error.getErrorCode(),
                 partialChange.error.getErrorMessage()
@@ -66,7 +70,9 @@ class ForumViewModel @Inject constructor() :
         }
     }
 
-    private object ForumPartialChangeProducer :
+    private class ForumPartialChangeProducer(
+        private val tiebaApi: ITiebaApi,
+    ) :
         PartialChangeProducer<ForumUiIntent, ForumPartialChange, ForumUiState> {
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun toPartialChangeFlow(intentFlow: Flow<ForumUiIntent>): Flow<ForumPartialChange> =
@@ -87,9 +93,9 @@ class ForumViewModel @Inject constructor() :
             FrsPageRepository.frsPage(forumName, 1, 1, sortType, null, true)
                 .map {
                     if (it.data_?.forum != null) ForumPartialChange.Load.Success(
-                        it.data_.forum,
-                        it.data_.anti?.tbs,
-                        it.data_.nav_tab_info
+                        it.data_!!.forum!!,
+                        it.data_!!.anti?.tbs,
+                        it.data_!!.nav_tab_info
                     )
                     else ForumPartialChange.Load.Failure(NullPointerException("未知错误"))
                 }
@@ -97,39 +103,39 @@ class ForumViewModel @Inject constructor() :
                 .catch { emit(ForumPartialChange.Load.Failure(it)) }
 
         private fun ForumUiIntent.SignIn.produceLoadPartialChange() =
-            TiebaApi.getInstance().signFlow("$forumId", forumName, tbs)
+            tiebaApi.signFlow("$forumId", forumName, tbs)
                 .map { signResultBean ->
                     if (signResultBean.userInfo?.signBonusPoint != null &&
-                        signResultBean.userInfo.levelUpScore != null &&
-                        signResultBean.userInfo.contSignNum != null &&
-                        signResultBean.userInfo.userSignRank != null &&
-                        signResultBean.userInfo.isSignIn != null &&
-                        signResultBean.userInfo.levelName != null &&
-                        signResultBean.userInfo.allLevelInfo.isNotEmpty()
+                        signResultBean.userInfo!!.levelUpScore != null &&
+                        signResultBean.userInfo!!.contSignNum != null &&
+                        signResultBean.userInfo!!.userSignRank != null &&
+                        signResultBean.userInfo!!.isSignIn != null &&
+                        signResultBean.userInfo!!.levelName != null &&
+                        signResultBean.userInfo!!.allLevelInfo.isNotEmpty()
                     ) {
-                        val levelUpScore = signResultBean.userInfo.levelUpScore.toInt()
+                        val levelUpScore = signResultBean.userInfo!!.levelUpScore!!.toInt()
                         ForumPartialChange.SignIn.Success(
-                            signResultBean.userInfo.signBonusPoint.toInt(),
+                            signResultBean.userInfo!!.signBonusPoint!!.toInt(),
                             levelUpScore,
-                            signResultBean.userInfo.contSignNum.toInt(),
-                            signResultBean.userInfo.userSignRank.toInt(),
-                            signResultBean.userInfo.isSignIn.toInt(),
-                            signResultBean.userInfo.allLevelInfo.last { it.score.toInt() < levelUpScore }.id.toInt(),
-                            signResultBean.userInfo.levelName
+                            signResultBean.userInfo!!.contSignNum!!.toInt(),
+                            signResultBean.userInfo!!.userSignRank!!.toInt(),
+                            signResultBean.userInfo!!.isSignIn!!.toInt(),
+                            signResultBean.userInfo!!.allLevelInfo.last { it.score.toInt() < levelUpScore }.id.toInt(),
+                            signResultBean.userInfo!!.levelName!!
                         )
                     } else ForumPartialChange.SignIn.Failure(NullPointerException("未知错误"))
                 }
                 .catch { emit(ForumPartialChange.SignIn.Failure(it)) }
 
         private fun ForumUiIntent.Like.produceLoadPartialChange() =
-            TiebaApi.getInstance().likeForumFlow("$forumId", forumName, tbs)
+            tiebaApi.likeForumFlow("$forumId", forumName, tbs)
                 .map<LikeForumResultBean, ForumPartialChange.Like> {
                     ForumPartialChange.Like.Success(it)
                 }
                 .catch { emit(ForumPartialChange.Like.Failure(it)) }
 
         private fun ForumUiIntent.Unlike.produceLoadPartialChange() =
-            TiebaApi.getInstance().unlikeForumFlow("$forumId", forumName, tbs)
+            tiebaApi.unlikeForumFlow("$forumId", forumName, tbs)
                 .map<CommonResponse, ForumPartialChange.Unlike> {
                     ForumPartialChange.Unlike.Success
                 }
@@ -239,13 +245,16 @@ sealed interface ForumPartialChange : PartialChange<ForumUiState> {
             is Failure -> oldState
             is Success -> oldState.copy(
                 forum = oldState.forum?.getImmutable {
+                    // LikeForumResultBean 链字段全部非空声明无默认值,服务端错误响应缺 info
+                    // 时为运行期 null:reduce 在 .scan 内、dispatchEvent 在 .onEach 内,
+                    // 都在任何 .catch 之外——必须判空降级,不得 NPE 出管线崩进程
                     copy(
                         is_like = 1,
-                        cur_score = data.info.curScore.toInt(),
-                        levelup_score = data.info.levelUpScore.toInt(),
-                        user_level = data.info.levelId.toInt(),
-                        level_name = data.info.levelName,
-                        member_num = data.info.memberSum.toInt()
+                        cur_score = data.info?.curScore?.toIntOrNull() ?: 0,
+                        levelup_score = data.info?.levelUpScore?.toIntOrNull() ?: 0,
+                        user_level = data.info?.levelId?.toIntOrNull() ?: 0,
+                        level_name = data.info?.levelName ?: "",
+                        member_num = data.info?.memberSum?.toIntOrNull() ?: 0
                     )
                 }
             )

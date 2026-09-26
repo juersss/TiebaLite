@@ -16,6 +16,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withAnnotation
 import androidx.compose.ui.text.withStyle
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.components.spans.EmoticonSpanV2
@@ -75,7 +76,7 @@ object StringUtil {
 
     @JvmStatic
     fun getUsernameString(context: Context, username: String, nickname: String?): CharSequence {
-        val showBoth = context.appPreferences.showBothUsernameAndNickname
+        val showBoth = context.appPreferences.showBothUsernameAndNickname.value
         if (TextUtils.isEmpty(nickname)) {
             return if (TextUtils.isEmpty(username)) "" else username
         } else if (showBoth && !TextUtils.isEmpty(username) && !TextUtils.equals(
@@ -101,7 +102,7 @@ object StringUtil {
         nickname: String?,
         color: Color = Color.Unspecified
     ): AnnotatedString {
-        val showBoth = App.isInitialized && context.appPreferences.showBothUsernameAndNickname
+        val showBoth = App.isInitialized && context.appPreferences.showBothUsernameAndNickname.value
         return buildAnnotatedString {
             if (showBoth && !nickname.isNullOrBlank() && username != nickname && username.isNotBlank()) {
                 append(nickname)
@@ -147,14 +148,9 @@ object StringUtil {
 
     @JvmStatic
     @Stable
-    fun getAvatarUrl(portrait: String?): String {
-        if (portrait.isNullOrEmpty()) {
-            return ""
-        }
-        return if (portrait.startsWith("http://") || portrait.startsWith("https://")) {
-            portrait
-        } else "http://tb.himg.baidu.com/sys/portrait/item/$portrait"
-    }
+    /** 转发到 api 层实现（3b-prep-2）：api 的 PortraitAdapter 要用同一份归一化 */
+    fun getAvatarUrl(portrait: String?): String =
+        com.huanchengfly.tieba.post.api.internal.AvatarUrl.of(portrait)
 
     @JvmStatic
     fun getBigAvatarUrl(portrait: String?): String {
