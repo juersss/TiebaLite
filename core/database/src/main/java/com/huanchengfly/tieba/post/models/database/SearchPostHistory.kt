@@ -12,4 +12,6 @@ data class SearchPostHistory(
     val content: String,
     @ColumnInfo(name = "forumname") val forumName: String,
     val timestamp: Long = System.currentTimeMillis(),
+    /** 归属账号 uid（未登录 = 空串）。2026-09-26 起按账号隔离；列名口径见 [History.ownerUid] */
+    @ColumnInfo(name = "owner_uid", defaultValue = "") val ownerUid: String = "",
 )
