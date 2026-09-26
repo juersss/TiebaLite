@@ -11,8 +11,11 @@ import android.provider.MediaStore
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.appcompat.app.AppCompatActivity
+import com.huanchengfly.tieba.post.core.data.appPreferences
 import com.huanchengfly.tieba.post.App
-import com.huanchengfly.tieba.post.R
+// 本文件唯一的 R 用法是 Matisse 的主题 style（127 行）；
+// nonTransitiveRClass=true 后须引依赖自己的 R，不再引 app 的 R。
+import com.zhihu.matisse.R
 import com.zhihu.matisse.Matisse
 import com.zhihu.matisse.MimeType
 import com.zhihu.matisse.engine.impl.GlideEngine
@@ -37,7 +40,7 @@ fun isPhotoPickerAvailable(): Boolean {
 }
 
 fun shouldUsePhotoPicker(): Boolean {
-    return !App.INSTANCE.appPreferences.doNotUsePhotoPicker && isPhotoPickerAvailable()
+    return !App.INSTANCE.appPreferences.doNotUsePhotoPicker.value && isPhotoPickerAvailable()
 }
 
 fun Intent.getClipDataUris(): List<Uri> {

@@ -20,7 +20,8 @@ public class TintCheckBox extends AppCompatCheckBox {
     }
 
     public TintCheckBox(Context context, AttributeSet attrs) {
-        this(context, attrs, R.attr.checkboxStyle);
+        // nonTransitiveRClass=true：checkboxStyle 是 appcompat 的 attr
+        this(context, attrs, androidx.appcompat.R.attr.checkboxStyle);
     }
 
     public TintCheckBox(Context context, AttributeSet attrs, int defStyleAttr) {

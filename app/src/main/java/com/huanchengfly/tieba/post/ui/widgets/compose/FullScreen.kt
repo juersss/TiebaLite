@@ -21,13 +21,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.R
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.findViewTreeViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.findViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.huanchengfly.tieba.post.R
 import java.util.UUID
 
 @Composable
@@ -77,6 +77,7 @@ private class FullScreenLayout(
         composeView.findViewTreeOnBackPressedDispatcherOwner()
             ?.let { setViewTreeOnBackPressedDispatcherOwner(it) }
 
+        // nonTransitiveRClass=true：compose_view_saveable_id_tag 是 compose-ui 自己的 R
         setTag(R.id.compose_view_saveable_id_tag, "CustomLayout:$uniqueId")
     }
 

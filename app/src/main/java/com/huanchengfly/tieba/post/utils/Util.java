@@ -44,8 +44,9 @@ public class Util {
         Snackbar snackbar = Snackbar.make(view, text, duration);
         snackbar.setActionTextColor(ThemeUtils.getColorByAttr(view.getContext(), R.attr.colorAccent));
         View mView = snackbar.getView();
-        Button mButton = mView.findViewById(R.id.snackbar_action);
-        TextView mTextView = mView.findViewById(R.id.snackbar_text);
+        // nonTransitiveRClass=true：snackbar_* 是 material 库内部的 view id
+        Button mButton = mView.findViewById(com.google.android.material.R.id.snackbar_action);
+        TextView mTextView = mView.findViewById(com.google.android.material.R.id.snackbar_text);
         mButton.setTextAppearance(view.getContext(), R.style.TextAppearance_Bold);
         if (ThemeUtil.THEME_TRANSLUCENT.equals(ThemeUtil.getRawTheme())) {
             mView.setBackgroundTintList(ColorStateList.valueOf(view.getResources().getColor(R.color.white)));

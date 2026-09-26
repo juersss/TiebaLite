@@ -83,7 +83,8 @@ public abstract class BaseBottomSheetDialogFragment extends BottomSheetDialogFra
         super.onStart();
         Dialog dialog = getDialog();
         if (dialog != null) {
-            View bottomSheet = dialog.findViewById(R.id.design_bottom_sheet);
+            // nonTransitiveRClass=true：design_bottom_sheet 是 material 库的 id
+            View bottomSheet = dialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
             bottomSheet.getLayoutParams().height = isFullScreen() ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT;
         }
         final View view = getView();
@@ -167,7 +168,7 @@ public abstract class BaseBottomSheetDialogFragment extends BottomSheetDialogFra
                 dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, getHeight());
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
             ((View) rootView.getParent()).setBackgroundColor(Color.TRANSPARENT);
-            dialog.getWindow().findViewById(R.id.design_bottom_sheet).setBackgroundColor(Color.TRANSPARENT);
+            dialog.getWindow().findViewById(com.google.android.material.R.id.design_bottom_sheet).setBackgroundColor(Color.TRANSPARENT);
         }
         initView();
         return dialog;

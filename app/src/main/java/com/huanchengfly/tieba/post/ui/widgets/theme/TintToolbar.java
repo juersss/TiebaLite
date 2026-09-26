@@ -29,7 +29,8 @@ public class TintToolbar extends Toolbar implements Tintable {
     }
 
     public TintToolbar(Context context, @Nullable AttributeSet attrs) {
-        this(context, attrs, R.attr.toolbarStyle);
+        // nonTransitiveRClass=true：toolbarStyle 是 appcompat 的 attr
+        this(context, attrs, androidx.appcompat.R.attr.toolbarStyle);
     }
 
     @SuppressLint("CustomViewStyleable")
