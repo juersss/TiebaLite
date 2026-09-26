@@ -289,18 +289,16 @@ fun ForumSearchPostPage(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    val sortTypeMapping = remember {
-        mapOf(
-            ForumSearchPostSortType.NEWEST to context.getString(R.string.title_search_post_sort_by_time),
-            ForumSearchPostSortType.RELATIVE to context.getString(R.string.title_search_post_sort_by_relevant),
-        )
-    }
-    val filterTypeMapping = remember {
-        mapOf(
-            ForumSearchPostFilterType.ALL to context.getString(R.string.title_search_filter_all),
-            ForumSearchPostFilterType.ONLY_THREAD to context.getString(R.string.title_search_filter_only_thread),
-        )
-    }
+    // 组合内 stringResource 直接建表(替代 remember+context.getString):
+    // 跟随语言切换重组,map 仅两键,重建成本可忽略
+    val sortTypeMapping = mapOf(
+        ForumSearchPostSortType.NEWEST to stringResource(R.string.title_search_post_sort_by_time),
+        ForumSearchPostSortType.RELATIVE to stringResource(R.string.title_search_post_sort_by_relevant),
+    )
+    val filterTypeMapping = mapOf(
+        ForumSearchPostFilterType.ALL to stringResource(R.string.title_search_filter_all),
+        ForumSearchPostFilterType.ONLY_THREAD to stringResource(R.string.title_search_filter_only_thread),
+    )
     var expanded by remember { mutableStateOf(false) }
 
     MyScaffold(
@@ -410,34 +408,39 @@ fun ForumSearchPostPage(
                                     data = data,
                                     lazyListState = lazyListState,
                                     onItemClick = {
+                                        // 服务端字符串转 Long 必须守卫:非数字/缺失时跳过跳转,不得崩
+                                        val threadId = it.tid.toLongOrNull() ?: return@SearchThreadList
                                         if (it.postInfo != null) {
+                                            val subPostId = it.cid.toLongOrNull() ?: return@SearchThreadList
                                             navigator.navigate(
                                                 SubPostsPageDestination(
-                                                    threadId = it.tid.toLong(),
-                                                    subPostId = it.cid.toLong(),
+                                                    threadId = threadId,
+                                                    subPostId = subPostId,
                                                     loadFromSubPost = true
                                                 )
                                             )
                                         } else if (it.mainPost != null) {
                                             navigator.navigate(
                                                 ThreadPageDestination(
-                                                    threadId = it.tid.toLong(),
-                                                    postId = it.pid.toLong(),
+                                                    threadId = threadId,
+                                                    postId = it.pid.toLongOrNull() ?: 0L,
                                                     scrollToReply = true,
                                                 )
                                             )
                                         } else {
                                             navigator.navigate(
                                                 ThreadPageDestination(
-                                                    threadId = it.tid.toLong()
+                                                    threadId = threadId
                                                 )
                                             )
                                         }
                                     },
                                     onItemUserClick = {
-                                        if(!it.userId.isNullOrEmpty())navigator.navigate(UserProfilePageDestination(
-                                            it.userId.toLong()
-                                        ))
+                                        // "0" 是模型自声明的"作者未知"占位值,一并过滤
+                                        val userId = it.userId?.toLongOrNull()
+                                        if (userId != null && userId != 0L) {
+                                            navigator.navigate(UserProfilePageDestination(userId))
+                                        }
                                     },
                                     onItemForumClick = {
                                         navigator.navigate(
