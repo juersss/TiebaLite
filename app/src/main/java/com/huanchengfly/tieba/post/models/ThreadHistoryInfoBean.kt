@@ -1,5 +1,6 @@
 package com.huanchengfly.tieba.post.models
 
+import com.huanchengfly.tieba.post.api.models.BaseBean
 import kotlinx.serialization.Serializable
 
 @Serializable
