@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  debug 变体专属清单：这里声明的一切都**不会**进 release 包（不是 BuildConfig 门控，
+  是源码集级别的隔离）。自检面板只存在于 debug 版。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <activity
+            android:name="com.huanchengfly.tieba.post.selfcheck.SelfCheckActivity"
+            android:exported="true"
+            android:label="TiebaLite 自检"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+
+</manifest>
