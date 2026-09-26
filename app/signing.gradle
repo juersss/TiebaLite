@@ -1,0 +1,103 @@
+// release 签名凭据解析 + fail-closed 守卫（Phase 7 从 app/build.gradle.kts 外置）。
+//
+// 引入方式：app/build.gradle.kts 里 `apply(from = "signing.gradle")`（在 plugins{} 之后）。
+// 外置动机：凭据处理不该长在 app 模块脚本里——app 脚本只该描述"这个应用是什么"，
+// 密钥从哪来、取不到时怎么办属于构建基础设施。
+//
+// 为什么是 Groovy 而不是 Kotlin DSL（.kts）：apply(from=) 引入的脚本**拿不到被应用插件的
+// 扩展访问器**，而 Kotlin DSL 是静态编译的——`android { }` 与
+// `com.android.build.api.dsl.ApplicationExtension` 都会解析失败（2026-09-17 实测：
+// 10 个 Script compilation errors）。Groovy 走动态派发，`android { }` 正常工作。
+//
+// 也正因如此，这里**不用 extra 传凭据**：extra 属于 project properties，
+// `./gradlew properties` 与构建扫描会把它们明文打印出来。口令只活在下面的局部变量里。
+
+def keystorePropertiesFile = new File(rootDir, "keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+// ── 凭据解析顺序（口令绝不入库、绝不入 extra/构建扫描）────────────────────────────
+//   1) 环境变量 TIEBA_KEYSTORE_PASSWORD / TIEBA_KEY_PASSWORD（CI / 临时构建）
+//   2) 用户级文件 ~/.tieba-personal.properties（仓库之外，打包/分享工作区不会带走）
+//   3) 兜底：仓库内 keystore.properties（仅为向后兼容保留；正常应缺省）
+def userKeystoreSecrets = new Properties()
+def userKeystoreFile = new File(System.getProperty("user.home"), ".tieba-personal.properties")
+if (userKeystoreFile.exists()) {
+    userKeystoreFile.withInputStream { userKeystoreSecrets.load(it) }
+}
+def keystoreSecret = { String key ->
+    def envName = (key == "keystore.password") ? "TIEBA_KEYSTORE_PASSWORD" : "TIEBA_KEY_PASSWORD"
+    System.getenv(envName)
+        ?: userKeystoreSecrets.getProperty(key)
+        ?: keystoreProperties.getProperty(key)
+}
+
+// ── 配置期只记录、执行期裁决（外部审查-2）──────────────────────────────────────
+// 配置阶段对**所有任务**一视同仁：原先把 `?: throw GradleException(...)` 写在
+// buildTypes{release{}} 里，会让纯克隆环境（无 keystore.properties）的
+// :app:assembleDebug、:app:testDebugUnitTest 与 IDE 同步一并失败，
+// 与"debug 允许回落：纯克隆也能出本地调试包"直接矛盾。
+// 因此原因只记在变量里，真正的失败交给下面的 validateReleaseSigning 任务。
+String signingUnavailableReason = null
+
+def ksFile = keystoreProperties.getProperty("keystore.file", "")
+if (!ksFile) {
+    signingUnavailableReason =
+        "keystore.properties 缺失或未配置 keystore.file。请配置 keystore.properties" +
+            "(keystore.file/alias)与口令(环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD" +
+            " 或 ~/.tieba-personal.properties),拒绝静默降级 debug 签名。"
+} else {
+    // ⚠️ 局部变量名**不要**与 DSL 属性同名（storePassword/keyPassword/keyAlias）：
+    // Groovy 的命令式调用 `storePassword storePassword` 会命中同名局部变量并被解析成
+    // `String.call(String)`，报 "No signature of method: java.lang.String.call()"，
+    // 而且**报错信息会把口令原样打出来**（2026-09-17 实测踩中）。
+    def storePwd = keystoreSecret("keystore.password")
+    def keyPwd = keystoreSecret("keystore.key.password")
+    def aliasValue = keystoreProperties.getProperty("keystore.key.alias")
+    if (storePwd == null || keyPwd == null) {
+        signingUnavailableReason =
+            "keystore.file 已配置但签名口令缺失:请设置环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD " +
+                "或用户级文件 ~/.tieba-personal.properties。" +
+                "拒绝静默降级到 debug 签名发布 release。"
+    } else {
+        android {
+            signingConfigs {
+                create("config") {
+                    storeFile = new File(rootDir, ksFile)
+                    storePassword = storePwd
+                    keyAlias = aliasValue
+                    keyPassword = keyPwd
+                    enableV1Signing = true
+                    enableV2Signing = true
+                    enableV3Signing = true
+                    enableV4Signing = true
+                }
+            }
+        }
+    }
+}
+
+// ── 执行期 fail-closed ────────────────────────────────────────────────────────
+// 校验任务挂在所有"产出已签名 release 产物"的任务上（dependsOn 保证先于其执行）：
+// 校验失败 → 这些任务不会执行，不会产出 debug 签名的 release 包。
+// 验收口径：无凭据 assembleDebug 成功、无凭据 assembleRelease 失败、有效签名 assembleRelease 成功。
+tasks.register("validateReleaseSigning") {
+    def unavailableReason = signingUnavailableReason
+    // 校验必须每次真跑，不得 FROM-CACHE 跳过（否则 fail-closed 契约可被缓存绕过）
+    outputs.upToDateWhen { false }
+    doLast {
+        if (unavailableReason != null) {
+            throw new GradleException(unavailableReason)
+        }
+    }
+}
+["assembleRelease", "bundleRelease", "packageRelease"].each { taskName ->
+    tasks.matching { it.name == taskName }.configureEach {
+        dependsOn("validateReleaseSigning")
+    }
+}
+tasks.matching { it.name.startsWith("publishRelease") }.configureEach {
+    dependsOn("validateReleaseSigning")
+}
