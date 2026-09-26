@@ -56,8 +56,11 @@ object FileUtil {
     fun getFilePath(context: Context, dir: String): String {
         var directoryPath = ""
         //判断SD卡是否可用
+        // getExternalFilesDir 在外部存储不可用时返回 null,而全局状态可能仍报 MEDIA_MOUNTED
+        // (API 33 起废弃、部分设备恒挂载):null 回落内部存储,不得 `!!` 崩
         directoryPath = if (Environment.MEDIA_MOUNTED == Environment.getExternalStorageState()) {
-            context.getExternalFilesDir(dir)!!.absolutePath
+            context.getExternalFilesDir(dir)?.absolutePath
+                ?: context.filesDir.resolve(dir).apply { mkdirs() }.absolutePath
         } else {
             context.filesDir.toString() + File.separator + dir
         }
@@ -147,16 +150,62 @@ object FileUtil {
     }
 
     @JvmStatic
-    fun getRealPathFromUri(context: Context, contentUri: Uri?): String {
-        val proj = arrayOf(MediaStore.Images.Media.DATA)
-        context.contentResolver.query(contentUri!!, proj, null, null, null).use { cursor ->
-            if (cursor != null) {
-                val column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-                cursor.moveToFirst()
-                return cursor.getString(column_index)
+    /** 转发到 api 层实现（3b-prep-2）：`PhotoInfoBean` 在 api 树里，需要这份旧链路解析 */
+    fun getRealPathFromUri(context: Context, contentUri: Uri?): String =
+        com.huanchengfly.tieba.post.api.internal.MediaPaths.getRealPathFromUri(context, contentUri)
+
+    /** 上传源文件临时副本目录(cache 私有目录,上传完成后由调用方清理) */
+    private const val UPLOAD_CACHE_DIR = "upload_src"
+
+    /**
+     * 把选中图片解析为可上传的本地文件路径(外部审查-3)。
+     *
+     * 旧链路直接 [getRealPathFromUri] 拿 `_data` 列:云端图片、仅持 URI 读授权、
+     * 无 DATA 列的 provider(空游标/getColumnIndexOrThrow 抛异常)在这条路上全军覆没。
+     * 这里容错化解析并增加兜底:路径解析失败或文件不可读时,用
+     * ContentResolver.openInputStream 把内容复制到私有缓存再返回副本路径。
+     * 解析失败抛 IOException,由调用方的 flow .catch 转成可恢复的 UI 失败态。
+     */
+    @JvmStatic
+    fun resolveUriToUploadPath(context: Context, uri: Uri): String {
+        val realPath = runCatching { getRealPathFromUri(context, uri) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() && File(it).canRead() }
+        if (realPath != null) return realPath
+
+        val cacheDir = File(context.cacheDir, UPLOAD_CACHE_DIR).apply { mkdirs() }
+        val copy = File(cacheDir, "img_${System.currentTimeMillis()}_${(0 until 1000).random()}.jpg")
+        try {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IOException("无法读取所选图片(URI 无内容流)")
+            input.use { source -> copy.outputStream().use { source.copyTo(it) } }
+        } catch (t: Throwable) {
+            copy.delete()
+            throw t
+        }
+        if (copy.length() == 0L) {
+            copy.delete()
+            throw IOException("所选图片内容为空")
+        }
+        return copy.absolutePath
+    }
+
+    /**
+     * 上传结束(成功/失败/取消)后清理本次通过缓存副本上传的临时文件。
+     *
+     * 只删真实缓存目录的前缀命中:paths 里混有解析成功时原样返回的用户原文件路径,
+     * 子串匹配(`contains("upload_src")`)会把路径恰好含该词的用户原图一并删掉。
+     */
+    @JvmStatic
+    fun cleanupUploadCacheFiles(context: Context, paths: List<String>) {
+        val cacheDirPrefix = File(context.cacheDir, UPLOAD_CACHE_DIR)
+            .normalize().absolutePath + File.separator
+        for (path in paths) {
+            val file = File(path)
+            if (file.normalize().absolutePath.startsWith(cacheDirPrefix)) {
+                runCatching { file.delete() }
             }
         }
-        return ""
     }
 
     fun downloadBySystem(context: Context, fileType: Int, url: String?) {
@@ -223,11 +272,12 @@ object FileUtil {
             return null
         }
         try {
-            val `is`: InputStream = FileInputStream(file)
-            val length = `is`.available()
-            val buffer = ByteArray(length)
-            `is`.read(buffer)
-            return String(buffer, StandardCharsets.UTF_8)
+            FileInputStream(file).use { `is` ->
+                val length = `is`.available()
+                val buffer = ByteArray(length)
+                `is`.read(buffer)
+                return String(buffer, StandardCharsets.UTF_8)
+            }
         } catch (e: IOException) {
             e.printStackTrace()
         }
@@ -240,10 +290,10 @@ object FileUtil {
             return false
         }
         try {
-            val fos = FileOutputStream(file)
-            fos.write(content.toByteArray())
-            fos.flush()
-            fos.close()
+            FileOutputStream(file, append).use { fos ->
+                fos.write(content.toByteArray())
+                fos.flush()
+            }
             return true
         } catch (e: IOException) {
             e.printStackTrace()
@@ -256,15 +306,16 @@ object FileUtil {
             return false
         }
         try {
-            val fos = FileOutputStream(file)
-            val buffer = ByteArray(1024)
-            var byteCount: Int
-            while (inputStream.read(buffer).also { byteCount = it } != -1) {
-                fos.write(buffer, 0, byteCount)
+            inputStream.use { `is` ->
+                FileOutputStream(file).use { fos ->
+                    val buffer = ByteArray(1024)
+                    var byteCount: Int
+                    while (`is`.read(buffer).also { byteCount = it } != -1) {
+                        fos.write(buffer, 0, byteCount)
+                    }
+                    fos.flush()
+                }
             }
-            fos.flush()
-            fos.close()
-            inputStream.close()
             return true
         } catch (e: IOException) {
             e.printStackTrace()

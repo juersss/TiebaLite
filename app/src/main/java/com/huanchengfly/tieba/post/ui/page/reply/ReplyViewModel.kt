@@ -9,7 +9,7 @@ import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
 import com.huanchengfly.tieba.post.api.models.AddThreadBean
 import com.huanchengfly.tieba.post.api.models.UploadPictureResultBean
-import com.huanchengfly.tieba.post.api.models.protos.addPost.AddPostResponse
+import com.huanchengfly.tieba.post.core.network.model.protos.addPost.AddPostResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaUnknownException
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorCode
 import com.huanchengfly.tieba.post.api.retrofit.exception.getErrorMessage
@@ -27,15 +27,20 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 enum class ReplyPanelType {
@@ -106,6 +111,8 @@ class ReplyViewModel @Inject constructor() :
                     .flatMapConcat { it.producePartialChange() },
                 intentFlow.filterIsInstance<ReplyUiIntent.SwitchReplyType>()
                     .flatMapConcat { it.producePartialChange() },
+                intentFlow.filterIsInstance<ReplyUiIntent.ClearContent>()
+                    .flatMapConcat { it.producePartialChange() },
             )
 
         private fun ReplyUiIntent.Send.producePartialChange(): Flow<ReplyPartialChange.Send> {
@@ -154,9 +161,9 @@ class ReplyViewModel @Inject constructor() :
                 .map<AddPostResponse, ReplyPartialChange.Send> {
                     if (it.data_ == null) throw TiebaUnknownException
                     ReplyPartialChange.Send.Success(
-                        threadId = it.data_.tid,
-                        postId = it.data_.pid,
-                        expInc = it.data_.exp?.inc.orEmpty()
+                        threadId = it.data_!!.tid,
+                        postId = it.data_!!.pid,
+                        expInc = it.data_!!.exp?.inc.orEmpty()
                     )
                 }
                 .onStart { emit(ReplyPartialChange.Send.Start) }
@@ -168,16 +175,25 @@ class ReplyViewModel @Inject constructor() :
         }
 
         private fun ReplyUiIntent.UploadImages.producePartialChange() =
-            ImageUploader(forumName)
-                .uploadImages(
-                    imageUris.map {
-                        FileUtil.getRealPathFromUri(
-                            App.INSTANCE,
-                            Uri.parse(it)
-                        )
-                    },
-                    isOriginImage
-                )
+            // 外部审查-3:URI 解析挪进 flow{} 内——旧实现 imageUris.map{getRealPathFromUri}
+            // 在建流前即执行,路径查询抛出的异常落在 .catch 保护范围之外,可能终止状态流;
+            // 解析失败(含缓存副本兜底后仍不可读)在这里被 .catch 转成可恢复的 UI 失败态。
+            // resolveUriToUploadPath 对云端/无 _data 列的图片会复制缓存副本,
+            // finally 里统一清理(cleanup 只删 upload_src 命中的路径,原始路径不受影响)
+            flow {
+                val cacheCopies = mutableListOf<String>()
+                try {
+                    val resolvedPaths = imageUris.map {
+                        FileUtil.resolveUriToUploadPath(App.INSTANCE, Uri.parse(it)).also(cacheCopies::add)
+                    }
+                    emitAll(ImageUploader(forumName).uploadImages(resolvedPaths, isOriginImage))
+                } finally {
+                    // NonCancellable:取消路径下默认抛 CancellationException 会让清理不执行
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        FileUtil.cleanupUploadCacheFiles(App.INSTANCE, cacheCopies)
+                    }
+                }
+            }
                 .map<List<UploadPictureResultBean>, ReplyPartialChange.UploadImages> {
                     ReplyPartialChange.UploadImages.Success(it)
                 }
@@ -207,6 +223,9 @@ class ReplyViewModel @Inject constructor() :
 
         private fun ReplyUiIntent.ToggleIsOriginImage.producePartialChange() =
             flowOf(ReplyPartialChange.ToggleIsOriginImage(isOriginImage))
+
+        private fun ReplyUiIntent.ClearContent.producePartialChange() =
+            flowOf<ReplyPartialChange>(ReplyPartialChange.ClearContent)
     }
 }
 
@@ -239,6 +258,15 @@ sealed interface ReplyUiIntent : UiIntent {
     data class RemoveImage(val imageIndex: Int) : ReplyUiIntent
 
     data class ToggleIsOriginImage(val isOriginImage: Boolean) : ReplyUiIntent
+
+    /**
+     * 重开回复框时清空上一轮遗留的发送态。ReplyDialog 的 ReplyViewModel 挂在
+     * 所在导航页上、跨多次打开存活,而 Send.Success 不清图片/成功标志——
+     * 不重置的话:A 对象回复选的图会被带进下一次发送、replySuccess 恒 true
+     * 还会让后续回复的草稿停写。整状态复位(与整页 ReplyPage 每次导航新建
+     * ViewModel 的"新开一律干净"基线对齐)。
+     */
+    data object ClearContent : ReplyUiIntent
 }
 
 sealed interface ReplyPartialChange : PartialChange<ReplyUiState> {
@@ -309,6 +337,11 @@ sealed interface ReplyPartialChange : PartialChange<ReplyUiState> {
     data class ToggleIsOriginImage(val isOriginImage: Boolean) : ReplyPartialChange {
         override fun reduce(oldState: ReplyUiState): ReplyUiState =
             oldState.copy(isOriginImage = isOriginImage)
+    }
+
+    /** 见 [ReplyUiIntent.ClearContent]:整状态复位 */
+    data object ClearContent : ReplyPartialChange {
+        override fun reduce(oldState: ReplyUiState): ReplyUiState = ReplyUiState()
     }
 }
 
