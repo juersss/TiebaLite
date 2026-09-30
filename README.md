@@ -19,7 +19,7 @@
 
 ## 这个 fork 做了什么
 
-相对上游 `2be35936`：**51 个提交、780 个文件、+32,272 / −4,514 行**（`git diff --shortstat 2be35936 HEAD`）。下面按模块列改动。
+相对上游 `2be35936`（本 fork 的分叉点）：**本 fork 53 个提交、784 个文件、+32,495 / −4,536 行**（`git diff --shortstat 2be35936 HEAD`；`git rev-list --count` 在该区间数出 54 笔，多出的一笔是上游自己的 `9701bfb6`）。已于 2026-09-30 把上游 `9701bfb6`（发帖换官方 protobuf）合并记入祖先并按 `core:network` 布局落位，故 fork 页不再显示 behind。下面按模块列改动。
 
 ## 一、工程骨架：单模块 → 多模块 + 约定插件
 
@@ -61,7 +61,7 @@
 
 ## 五、网络与图片
 
-- 伪装 **V22 身份**（`22.10.1.0`）：pb 接口只在 `_client_version ≥ 22.8.5.0` 时对楼中楼下发真实图片内容；赞踩/签到走 V12（协议常量跨版本零变化）。
+- 伪装 **V22 身份**（`22.10.1.0`）：pb 接口只在 `_client_version ≥ 22.8.5.0` 时对楼中楼下发真实图片内容；赞踩/签到走 V12（协议常量跨版本零变化）；发帖/回复/投票走 `TIEBA_V12_POST`——2026-09-30 随上游 `9701bfb6` 由 12.35.1.0 升到 12.52.1.0（哨兵 `ClientVersionTest` 同步锁定）。
 - **默认禁明文**：全局 `cleartextTrafficPermitted=false`，仅两个无凭据静态资源域按域名最小例外；图片地址、视频播放地址与视频封面地址在联网前**统一升 https**（修「整屏纯黑」与「视频点开黑屏」）；播放失败会提示原因并退回封面，不再静默黑屏。
 - 大图 **URL 三级解析**（展示 = displayUrl→originUrl→url；下载/分享 = originUrl→displayUrl→url）、楼中楼多图翻页崩溃修复、选图上传链容错、表情/语音/视频生命周期与上传 MD5+尺寸校验。
 
@@ -79,6 +79,7 @@
 - **应用标识与落盘文件名与上游完全一致**：包名 `com.huanchengfly.tieba.post.*`（搬进 `core` 的那几棵树也不改包名）、Room 库 `tblite.db`、账号 SharedPreferences `accountData`、DataStore `app_preferences`——这几个名字动一个就是用户数据事故。
 - **自动化测试只覆盖只读路径与本地账本**：不含任何写操作（发帖 / 回复 / 楼中楼回复 / 带图回复 / 投票提交），涉及写操作的用例只有赞/踩。
 - **依赖版本钉死在版本目录里**：XXPermissions 28.0、immersionbar 3.3.3（降级到 `com.gyf.immersionbar:3.0.0` 会在打开「设置 → 字体大小」时 `NoClassDefFoundError` 崩溃）；Jetifier 关闭。
+- **跟进上游不照抄**：上游提交一律**按 `core:network` 布局重新落位**（不把旧路径的副本并进来）；上游对两个 JSON 接口 UA / `_client_version` 的版本号变更（12.35.1.0 / 12.41.7.1 → 12.52.1.0）**未跟随**——那两个面承载签到 / 收藏 / 关注 / 图片上传 / 搜索，按测试红线其写操作不可实测，且与本次发帖修复无功能关系；`app/build.gradle.kts` 里的 `kotlin { compilerOptions { jvmTarget } }` 也**未跟随**（本 fork 由约定插件统一锁定）。
 
 ## 九、构建
 
