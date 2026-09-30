@@ -23,7 +23,11 @@ class ClientVersionTest {
     @Test
     fun v12AndV11VersionsAreLocked() {
         assertEquals("12.52.1.0", ClientVersion.TIEBA_V12.version)
-        assertEquals("12.35.1.0", ClientVersion.TIEBA_V12_POST.version)
+        // 2026-09-30 更新（跟随上游 9701bfb6「发帖换官方 protobuf #123」）：旧值 12.35.1.0 是官方
+        // 12.35 的发帖专用版本，新端点 POST /c/c/thread/add 要求当前 V12 身份。本值同时是
+        // OFFICIAL_PROTOBUF_TIEBA_POST_API 的身份常量，波及面：generalTabList（读路径，已实测）、
+        // 回复 addPost / 投票 addPollPost / 新发帖 addThread（写操作，按本仓红线不可实测）。
+        assertEquals("12.52.1.0", ClientVersion.TIEBA_V12_POST.version)
         assertEquals("11.10.8.6", ClientVersion.TIEBA_V11.version)
     }
 

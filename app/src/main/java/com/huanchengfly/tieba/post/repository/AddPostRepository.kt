@@ -1,7 +1,7 @@
 package com.huanchengfly.tieba.post.repository
 
 import com.huanchengfly.tieba.post.api.TiebaApi
-import com.huanchengfly.tieba.post.api.models.AddThreadBean
+import com.huanchengfly.tieba.post.core.network.model.protos.addThread.AddThreadResponse
 import com.huanchengfly.tieba.post.core.network.model.protos.addPost.AddPostResponse
 import com.huanchengfly.tieba.post.arch.GlobalEvent
 import com.huanchengfly.tieba.post.arch.emitGlobalEvent
@@ -18,7 +18,7 @@ object AddPostRepository {
         title: String? = "",
         isHide: Int? = 1,
         isTitle: Int? = 1
-    ): Flow<AddThreadBean> =
+    ): Flow<AddThreadResponse> =
         TiebaApi.getInstance()
             .addThreadFlow(
                 content,
@@ -29,15 +29,18 @@ object AddPostRepository {
                 requireNotNull(isTitle)
             ).onEach {
                 // 兜底(R7-⑤,09-06 收口):裸 GlobalScope 协程体内 checkNotNull/事件发射异常会崩进程
+                // （上游本提交把这里写回裸 GlobalScope + checkNotNull,本 fork 保留自己的加固,
+                //   只跟随响应形态换成 AddThreadResponse:data_ 缺失/字段畸形一律静默跳过,不发事件）
                 AppScope.launch {
                     runCatching {
-                        emitGlobalEvent(
-                            GlobalEvent.AddThreadSuccess(
-                                checkNotNull(it.tid?.toLong()),
-                                checkNotNull(it.pid?.toLong()),
-                                checkNotNull(it.errorMsg),
-                            )
-                        )
+                        val data = it.data_ ?: return@runCatching
+                        val threadId = data.tid.toLongOrNull() ?: return@runCatching
+                        val postId = data.pid.toLongOrNull() ?: return@runCatching
+                        val msg = data.toast?.content
+                            ?.joinToString("") { item -> item.text }
+                            ?.takeIf { text -> text.isNotEmpty() }
+                            ?: data.msg
+                        emitGlobalEvent(GlobalEvent.AddThreadSuccess(threadId, postId, msg))
                     }
                 }
             }

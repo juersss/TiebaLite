@@ -7,7 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import com.huanchengfly.tieba.post.App
 import com.huanchengfly.tieba.post.R
-import com.huanchengfly.tieba.post.api.models.AddThreadBean
+import com.huanchengfly.tieba.post.core.network.model.protos.addThread.AddThreadResponse
 import com.huanchengfly.tieba.post.api.models.UploadPictureResultBean
 import com.huanchengfly.tieba.post.core.network.model.protos.addPost.AddPostResponse
 import com.huanchengfly.tieba.post.api.retrofit.exception.TiebaUnknownException
@@ -127,12 +127,12 @@ class ReplyViewModel @Inject constructor() :
                         isHide = 1,
                         isTitle = if (threadTitle.isBlank()) 1 else 0,
                     )
-                    .map<AddThreadBean, ReplyPartialChange.Send> {
-                        if (it.tid == null) throw TiebaUnknownException
+                    .map<AddThreadResponse, ReplyPartialChange.Send> {
+                        val data = it.data_ ?: throw TiebaUnknownException
                         ReplyPartialChange.Send.Success(
-                            threadId = it.tid!!,
-                            postId = it.pid.orEmpty(),
-                            expInc = ""
+                            threadId = data.tid,
+                            postId = data.pid,
+                            expInc = data.exp?.inc.orEmpty()
                         )
                     }
                     .onStart { emit(ReplyPartialChange.Send.Start) }

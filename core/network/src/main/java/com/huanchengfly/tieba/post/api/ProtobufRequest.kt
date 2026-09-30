@@ -143,6 +143,7 @@ fun buildCommonRequest(
             start_type = 1,
             stoken = SessionProviders.credential.getSToken(),
             swan_game_ver = "1038000",
+            tbs = tbs,
             user_agent = getUserAgent("tieba/${clientVersion.version}"),
             z_id = SessionProviders.credential.getZId()
         )
