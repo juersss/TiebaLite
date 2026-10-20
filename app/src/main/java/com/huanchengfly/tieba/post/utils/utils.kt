@@ -151,11 +151,28 @@ fun getIntermixedColorBackground(
     )
 }
 
+/** 精确/子域后缀匹配（`tieba.baidu.com.evil.tld` 不算站内）。 */
+private fun isSameOrSubDomain(host: String?, domain: String): Boolean =
+    host != null && (host.equals(domain, ignoreCase = true) ||
+        host.endsWith(".$domain", ignoreCase = true))
+
+/** 只接受 http/https：`javascript:` / `file:` / `intent:` 一律不算可跳转链接。 */
+private fun isHttpUrl(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    val scheme = Uri.parse(url).scheme?.lowercase() ?: return false
+    return scheme == "http" || scheme == "https"
+}
+
 fun launchUrl(
     context: Context,
     navigator: DestinationsNavigator,
     url: String,
+    depth: Int = 0,
 ) {
+    // 2026-10-20：二次跳转（tiebaclient://…?url= 与 /mo/q/checkurl?url=）都来自**他人可控**
+    // 的帖子正文/站内页，可被拼成任意 scheme 或任意外部域递进应用内 WebView（无地址栏）。
+    // 三条约束：只允许 http/https 目标；checkurl 的**跳板**必须是百度域；递归限深一层。
+    if (depth > 1) return
     val uri = Uri.parse(url)
     val host = uri.host
     val path = uri.path
@@ -166,11 +183,9 @@ fun launchUrl(
     if (scheme == "tiebaclient") {
         when (uri.getQueryParameter("action")) {
             "preview_file" -> {
-                val realUrl = uri.getQueryParameter("url")
-                if (realUrl.isNullOrEmpty()) {
-                    return
-                }
-                launchUrl(context, navigator, realUrl)
+                val realUrl = uri.getQueryParameter("url") ?: return
+                if (!isHttpUrl(realUrl)) return
+                launchUrl(context, navigator, realUrl, depth + 1)
             }
 
             else -> {
@@ -180,12 +195,13 @@ fun launchUrl(
         return
     }
     if (!path.contains("android_asset")) {
-        if (path == "/mo/q/checkurl") {
-            launchUrl(
-                context,
-                navigator,
-                uri.getQueryParameter("url")?.replace("http://https://", "https://").orEmpty()
-            )
+        // 只有百度域的 checkurl 才算"站内跳转器"；外站恰好同路径时按普通链接处理
+        if (path == "/mo/q/checkurl" && isSameOrSubDomain(host, "baidu.com")) {
+            val realUrl = uri.getQueryParameter("url")?.replace("http://https://", "https://")
+                ?: return
+            if (isHttpUrl(realUrl)) {
+                launchUrl(context, navigator, realUrl, depth + 1)
+            }
             return
         }
         if (host == "tieba.baidu.com" && path.startsWith("/p/")) {
@@ -200,8 +216,7 @@ fun launchUrl(
         // 2026-10-20 修复:此前用 host.contains("tieba.baidu.com")——`tieba.baidu.com.evil.tld`
         // 也会命中，于是外部钓鱼域被当作站内链交给应用内 WebView（无地址栏）打开。
         // 改为精确/子域后缀匹配（与 WebViewPage 的 isTiebaHost 同口径）。
-        fun hostIs(domain: String) = host.equals(domain, ignoreCase = true) ||
-            host.endsWith(".$domain", ignoreCase = true)
+        fun hostIs(domain: String) = isSameOrSubDomain(host, domain)
 
         val isTiebaLink = hostIs("tieba.baidu.com") || hostIs("wappass.baidu.com") ||
             hostIs("ufosdk.baidu.com") || hostIs("m.help.baidu.com")
