@@ -28,6 +28,26 @@
     <uses-permission android:name="com.miui.personalassistant.permission.FAVORITE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- 2026-10-20（审查 P3）：OAID 库（com.github.gzu-liyujiang:Android_CN_OAID）
+         会往合并清单里注入四个本应用根本不用、但会出现在商店权限列表/隐私扫描里的项：
+           · WRITE_SETTINGS —— 危险权限，库里的历史遗留声明，本应用从不写系统设置；
+           · AD_ID —— Google 广告 ID，本应用不使用 GAID（只取 OAID 填一个签名参数）；
+           · com.asus.msa.SupplementaryDID.ACCESS / freemme.permission.msa ——
+             仅华硕/卓易（Freeme）机型的厂商 OAID 通道权限，对国内主流 ROM 无意义。
+         按最小权限原则在合并时移除；OAID 取不到时会退化为空串（只是少一个可选参数）。 -->
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:node="remove" />
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
+    <uses-permission
+        android:name="com.asus.msa.SupplementaryDID.ACCESS"
+        tools:node="remove" />
+    <uses-permission
+        android:name="freemme.permission.msa"
+        tools:node="remove" />
+
     <supports-screens
         android:anyDensity="true"
         android:largeScreens="true"
