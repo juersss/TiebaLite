@@ -155,6 +155,9 @@ class VoicePlayerView @JvmOverloads constructor(
         // Manager.release 只回收 current,从未播放过的视图线程无人回收、随浏览无界累积。
         // 改为惰性:真正到达 STATE_READY 需要计时再建(released 视图除外)。
         timer = null
+        // 2026-10-20:released 此前只置位不复位——视图被回收后再点播放,READY 回调会因它
+        // 直接 return,进度文本永远停在旧值。重新初始化 = 重新投入使用,必须复位。
+        released = false
         player = Player(this)
     }
 
@@ -387,12 +390,19 @@ class VoicePlayerView @JvmOverloads constructor(
     }
 
     class Player(voicePlayerView: VoicePlayerView) : PlayerInterface(voicePlayerView) {
+        /**
+         * **每次现取**全局单例，而不是 init 时缓存：`Manager.release()` 挂在
+         * `BaseActivity.onStop()` 上（切后台就销毁播放器），而语音视图并不随之重建。
+         * 缓存实例的话，回到前台后这些视图手里全是"已释放的播放器"，点一下即
+         * IllegalStateException。现取则自动拿到重建后的实例。
+         */
         private val mExoPlayer: ExoPlayer
+            get() = Manager.getExoPlayer(voicePlayerView.context)
+
         private var dataSource: String? = null
 
-        init {
-            mExoPlayer = Manager.getExoPlayer(voicePlayerView.context)
-        }
+        /** 监听器当前挂在哪个实例上（单例可能被 `Manager.release()` 换掉，必须记着）。 */
+        private var attachedPlayer: ExoPlayer? = null
 
         override fun reset() {
             mExoPlayer.stop()
@@ -420,23 +430,30 @@ class VoicePlayerView @JvmOverloads constructor(
         }
 
         private fun setCurrent(current: VoicePlayerView?) {
-            if (current != null) {
-                // 换监听前先摘旧的:所有语音视图共享同一 ExoPlayer,只加不移会让
-                // 监听器随浏览无限累积,一条语音播放触发全部历史视图各自起计时器
-                if (CURRENT != null && CURRENT != current) {
-                    mExoPlayer.removeListener(CURRENT!!)
-                }
-                if (CURRENT != current) {
-                    CURRENT = current
-                    mExoPlayer.addListener(CURRENT!!)
-                }
-                Manager.notifyPlaying(CURRENT)
-            } else {
-                if (CURRENT != null) mExoPlayer.removeListener(
-                    CURRENT!!
-                )
+            val previous = CURRENT
+            if (current == null) {
+                if (previous != null) attachedPlayer?.let { runCatching { it.removeListener(previous) } }
+                attachedPlayer = null
                 CURRENT = null
+                return
             }
+            val player = mExoPlayer
+            // 换监听前先摘旧的:所有语音视图共享同一 ExoPlayer,只加不移会让
+            // 监听器随浏览无限累积,一条语音播放触发全部历史视图各自起计时器
+            if (previous != null && previous !== current) {
+                attachedPlayer?.let { runCatching { it.removeListener(previous) } }
+                attachedPlayer = null
+            }
+            if (attachedPlayer !== player) {
+                // 单例被重建过（Manager.release）或换了目标视图：把监听挂到**当前**实例
+                if (previous === current) {
+                    attachedPlayer?.let { runCatching { it.removeListener(current) } }
+                }
+                player.addListener(current)
+                attachedPlayer = player
+            }
+            CURRENT = current
+            Manager.notifyPlaying(current)
         }
 
         override fun stop() {
@@ -444,10 +461,18 @@ class VoicePlayerView @JvmOverloads constructor(
         }
 
         override fun release() {
-            if (CURRENT != null) CURRENT!!.reset()
-            mExoPlayer.release()
-            PLAYING_DATA_SOURCE = null
+            // 2026-10-20：**这里绝不能 `mExoPlayer.release()`**。mExoPlayer 是
+            // `Manager.getExoPlayer()` 返回的进程级单例，所有语音视图共用同一个实例；
+            // 而 release() 会在"语音行滚出组合"时被调用（Voices.kt 的 onDispose）。
+            // 旧实现于是一行滚走就把全局播放器销毁掉：其余语音视图各自持有的还是
+            // **已释放**的播放器，点一下即 IllegalStateException / 静默无声。
+            // 现在只做"本视图脱钩"：若正在播放的正是本行则停播，并摘掉监听。
+            if (CURRENT === voicePlayerView) {
+                Manager.peekExoPlayer()?.let { runCatching { it.stop() } }
+                PLAYING_DATA_SOURCE = null
+            }
             setCurrent(null)
+            dataSource = null
         }
 
         override val isPlaying: Boolean
@@ -524,13 +549,16 @@ class VoicePlayerView @JvmOverloads constructor(
             current = voicePlayerView
         }
 
+        /** 已存在的单例（可能为 null）；用于"只想停一下/清监听"的路径，不触发创建。 */
+        fun peekExoPlayer(): ExoPlayer? = sExoPlayer
+
         fun release() {
-            if (current != null) {
-                current!!.release()
-                current = null
-            } else if (sExoPlayer != null) {
-                sExoPlayer!!.release()
-            }
+            // 进程级回收（目前只有 Activity 销毁会走到）：先让当前视图脱钩，再销毁单例。
+            // 旧实现把两步写成 if/else——current 非空时跳过 sExoPlayer.release()，
+            // 随后又把 sExoPlayer 置空，等于把一个仍在运行的实例泄漏掉。
+            current?.release()
+            current = null
+            sExoPlayer?.release()
             sExoPlayer = null
         }
     }
