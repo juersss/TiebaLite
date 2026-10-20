@@ -29,11 +29,18 @@
         tools:ignore="FullBackupContent" />
     <!-- WebView 数据目录(2026-10-20 补):登录页的 BDUSS 来自 CookieManager，登录态
          实际落在 app_webview/ 的 cookie 库里。库/指针都排了，这里不排就等于
-         "数据库不带、会话却可能一起走"。:oksign 进程若曾 setDataDirectorySuffix，
-         会出现 app_webview_<suffix>，它不承载登录态（只读别名扫描），按需再补。 -->
+         "数据库不带、会话却可能一起走"。
+         app_webview_oksign 是非主进程(:oksign 服务)的 WebView 数据目录——`App.setWebViewPath`
+         把进程名收敛成固定后缀 "oksign"（旧写法是完整进程名，含 ':'，无法写精确规则）。
+         该目录当前只在 :oksign 进程真的初始化 WebView 时才创建；备份规则不支持通配符，
+         故必须按这个确切名字排掉，否则将来的会话/缓存会被一并带走。 -->
     <exclude
         domain="root"
         path="app_webview"
+        tools:ignore="FullBackupContent" />
+    <exclude
+        domain="root"
+        path="app_webview_oksign"
         tools:ignore="FullBackupContent" />
     <exclude
         domain="file"

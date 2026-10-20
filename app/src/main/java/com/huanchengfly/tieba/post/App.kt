@@ -76,10 +76,17 @@ class App : Application(), SketchFactory {
     @RequiresApi(api = 28)
     private fun setWebViewPath(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val processName = getProcessName(context)
-            if (applicationContext.packageName != processName) { //判断不等于默认进程名称
-                WebView.setDataDirectorySuffix(processName!!)
-            }
+            // 取不到进程名就**什么都不做**：宁可让多进程 WebView 走默认目录（与旧行为一致），
+            // 也绝不能给主进程设上后缀——那会把 WebView 换到另一个数据目录，等于把用户登出。
+            val processName = getProcessName(context) ?: return
+            if (applicationContext.packageName == processName) return // 默认进程：用默认目录
+            // 2026-10-20：后缀改成**短且可预测**的形态（`:oksign` → "oksign"）。
+            // 旧写法把完整进程名塞进去，实际目录是 `app_webview_com.huanchengfly.tieba.post:oksign`：
+            // 备份规则不支持通配符，既写不出精确规则、也没法在文档里说清它到底叫什么。
+            // 现在目录固定为 `app_webview_oksign`，backup_descriptor / data_extraction_rules
+            // 里按精确路径排除（与 app_webview 同一口径：WebView 登录态不随备份离机）。
+            val suffix = processName.substringAfterLast(':').ifBlank { "aux" }
+            WebView.setDataDirectorySuffix(suffix)
         }
     }
 

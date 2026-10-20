@@ -34,10 +34,16 @@
             path="error"
             tools:ignore="FullBackupContent" />
         <!-- WebView 数据目录(2026-10-20 补):登录态 cookie 落在 app_webview/，与上面
-             排除 Room/accountData 的口径一致——凭据不随云备份离机 -->
+             排除 Room/accountData 的口径一致——凭据不随云备份离机。
+             app_webview_oksign 见 backup_descriptor.xml 的同名条目（:oksign 进程的
+             WebView 数据目录，后缀由 App.setWebViewPath 固定为 "oksign"）。 -->
         <exclude
             domain="root"
             path="app_webview"
+            tools:ignore="FullBackupContent" />
+        <exclude
+            domain="root"
+            path="app_webview_oksign"
             tools:ignore="FullBackupContent" />
     </cloud-backup>
     <device-transfer>
@@ -68,10 +74,14 @@
             domain="file"
             path="error"
             tools:ignore="FullBackupContent" />
-        <!-- 同 cloud-backup:换机迁移同样不带走 WebView 登录态 -->
+        <!-- 同 cloud-backup:换机迁移同样不带走 WebView 登录态（含 :oksign 进程的目录） -->
         <exclude
             domain="root"
             path="app_webview"
+            tools:ignore="FullBackupContent" />
+        <exclude
+            domain="root"
+            path="app_webview_oksign"
             tools:ignore="FullBackupContent" />
     </device-transfer>
 </data-extraction-rules>
