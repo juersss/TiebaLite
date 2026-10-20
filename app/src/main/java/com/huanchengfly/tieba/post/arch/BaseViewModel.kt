@@ -48,7 +48,16 @@ abstract class BaseViewModel<
 
     val uiEventFlow: Flow<UiEvent> = _internalUiEventFlow
 
-    private val _intentFlow = MutableSharedFlow<Intent>()
+    // 缓冲 64 + DROP_OLDEST(2026-10-20 收口):意图管线里若有"消费一次后长期挂起"的分支
+    // (典型:HomeViewModel 的 RefreshHistory 直接 flatMapConcat 一个永不完成的 Room 活流),
+    // 零缓冲 SUSPEND 的 emit 要等所有订阅者取走——该分支不再取值后,**此后每一次** send 都永久挂起
+    // (首页下拉刷新 / 取消关注 / 置顶吧增删全部静默失效,直到杀进程)。与 _internalUiEventFlow 同款:
+    // 意图是稀疏的用户动作,64 深度实际不触顶;溢出丢最老的一条,好过整条管线冻结。
+    private val _intentFlow = MutableSharedFlow<Intent>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     private val initialState: State by lazy { createInitialState() }
 

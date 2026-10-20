@@ -494,6 +494,10 @@ fun HomePage(
 
     LaunchedEffect(Unit) {
         if (isLoggedIn && !viewModel.initialized) {
+            // 与 arch/Extensions.kt 的 pageViewModel(initialIntent = …) 同口径:先置位再发。
+            // HomePage 是唯一手写初始化却漏置 initialized 的页面,漏置会让本块在每次重进首页
+            // 时都重发一轮 RefreshHistory + Refresh(而 RefreshHistory 分支会长期占用意图管线)。
+            viewModel.initialized = true
             viewModel.send(HomeUiIntent.RefreshHistory)
             viewModel.send(HomeUiIntent.Refresh)
         }
