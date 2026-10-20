@@ -124,7 +124,7 @@ jobs:
             echo "::error::退出码非 0 但不是 validateReleaseSigning 失败(任务缺失/配置期报错/网络失败)——门禁判定无效"
             exit 1
           fi
-          if ! grep -q "拒绝静默降级" guard.log; then
+          if ! grep -q "RELEASE_SIGNING_UNAVAILABLE" guard.log; then
             echo "::error::validateReleaseSigning 失败了,但报错不是'缺凭据'(守卫逻辑被改坏)——门禁判定无效"
             exit 1
           fi

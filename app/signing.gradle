@@ -44,8 +44,10 @@ String signingUnavailableReason = null
 
 def ksFile = keystoreProperties.getProperty("keystore.file", "")
 if (!ksFile) {
+    // 前缀是**机器可判**的 ASCII 标记：CI 的门禁断言只认它，不依赖中文输出编码
+    // （runner 的 file/console encoding 不保证 UTF-8，grep 中文会假失败）。
     signingUnavailableReason =
-        "keystore.properties 缺失或未配置 keystore.file。请配置 keystore.properties" +
+        "RELEASE_SIGNING_UNAVAILABLE: keystore.properties 缺失或未配置 keystore.file。请配置 keystore.properties" +
             "(keystore.file/alias)与口令(环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD" +
             " 或 ~/.tieba-personal.properties),拒绝静默降级 debug 签名。"
 } else {
@@ -58,7 +60,7 @@ if (!ksFile) {
     def aliasValue = keystoreProperties.getProperty("keystore.key.alias")
     if (storePwd == null || keyPwd == null) {
         signingUnavailableReason =
-            "keystore.file 已配置但签名口令缺失:请设置环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD " +
+            "RELEASE_SIGNING_UNAVAILABLE: keystore.file 已配置但签名口令缺失:请设置环境变量 TIEBA_KEYSTORE_PASSWORD/TIEBA_KEY_PASSWORD " +
                 "或用户级文件 ~/.tieba-personal.properties。" +
                 "拒绝静默降级到 debug 签名发布 release。"
     } else {
