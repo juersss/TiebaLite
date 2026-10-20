@@ -42,6 +42,24 @@ class ForumBrowseCacheTest {
     }
 
     @Test
+    fun nullAnchorClearsStaleEntry() {
+        val key = ForumBrowseCache.key("吧A", false, 0)
+        // 2026-10-20:离开时在顶部(null)= 明确"回到顶部",必须清掉此前登记的旧锚点;
+        // 否则"刷新后停在顶部再进帖返回"会被旧锚点拽回刷新前的位置。
+        ForumBrowseCache.markPendingRestore(key, ForumBrowseCache.Anchor(7L, 0))
+        ForumBrowseCache.markPendingRestore(key, null)
+        assertNull("顶部语义必须清掉旧锚点", ForumBrowseCache.consumeRestoreAnchor(key))
+    }
+
+    @Test
+    fun peekDoesNotConsume() {
+        val key = ForumBrowseCache.key("吧A", false, 0)
+        ForumBrowseCache.markPendingRestore(key, ForumBrowseCache.Anchor(9L, 5))
+        assertEquals("peek 必须能读到未消费的锚点", ForumBrowseCache.Anchor(9L, 5), ForumBrowseCache.peekRestoreAnchor(key))
+        assertEquals("peek 不得破坏性消费", ForumBrowseCache.Anchor(9L, 5), ForumBrowseCache.consumeRestoreAnchor(key))
+    }
+
+    @Test
     fun keysIsolateForumSortAndTab() {
         val latest = ForumBrowseCache.key("吧A", false, 0)
         ForumBrowseCache.markPendingRestore(latest, ForumBrowseCache.Anchor(7L, 0))

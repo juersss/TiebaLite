@@ -291,17 +291,24 @@ fun ForumThreadListPage(
     val browseCacheKey = ForumBrowseCache.key(forumName, isGood, if (isGood) -1 else getSortType(context, forumName))
     var lastAnchor by remember { mutableStateOf<ForumBrowseCache.Anchor?>(null) }
     LaunchedEffect(lazyListState) {
-        snapshotFlow { lazyListState.firstVisibleItemIndex }.collect {
-            val first = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()
+        // 2026-10-20:此前只观察 firstVisibleItemIndex 且丢弃 String key(吧规表头)——
+        // 列表停在顶部时锚点**永远不更新**(停在上一次线程位置);同一项内滚动时 offset 也不更新。
+        snapshotFlow {
+            lazyListState.firstVisibleItemIndex to lazyListState.firstVisibleItemScrollOffset
+        }.collect { (index, offset) ->
+            val first = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
             val key = first?.key
-            if (key is Long) {
-                lastAnchor = ForumBrowseCache.Anchor(key, lazyListState.firstVisibleItemScrollOffset)
-            }
+            lastAnchor = if (key is Long) ForumBrowseCache.Anchor(key, offset) else null
         }
     }
-    DisposableEffect(lazyListState) {
+    DisposableEffect(lazyListState, browseCacheKey) {
         onDispose {
-            ForumBrowseCache.markPendingRestore(browseCacheKey, lastAnchor)
+            // 以"离开瞬间"的实时位置为准(采样值可能停更);列表尚未测量出来时回退到采样值
+            val first = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()
+            val live = if (first?.key is Long) {
+                ForumBrowseCache.Anchor(first.key as Long, lazyListState.firstVisibleItemScrollOffset)
+            } else null
+            ForumBrowseCache.markPendingRestore(browseCacheKey, if (first == null) lastAnchor else live)
         }
     }
 
@@ -314,6 +321,9 @@ fun ForumThreadListPage(
     onGlobalEvent<ForumThreadListUiEvent.Refresh>(
         filter = { it.isGood == isGood },
     ) {
+        // 2026-10-20:刷新 = 新的一次浏览,作废可能残留的锚点(否则返回会跳回刷新前位置)
+        lastAnchor = null
+        ForumBrowseCache.markPendingRestore(browseCacheKey, null)
         viewModel.send(getRefreshIntent(context, forumName, isGood, it.sortType, preserveList = it.preserveList))
     }
     onGlobalEvent<ForumThreadListUiEvent.BackToTop>(
@@ -383,23 +393,32 @@ fun ForumThreadListPage(
         refreshing = isRefreshing,
         // 下拉刷新保留已加载的旧列表(新帖合并到顶部),用户当前浏览位置不被顶走
         onRefresh = {
+            // 同全局 Refresh:下拉刷新后应停在顶部,不许旧锚点把用户拽回去
+            lastAnchor = null
+            ForumBrowseCache.markPendingRestore(browseCacheKey, null)
             viewModel.send(getRefreshIntent(context, forumName, isGood, preserveList = true))
         }
     )
     // RESTORE:列表数据落地后按锚点帖恢复滚动位置,只消费一次。saveable 恢复的
     // 索引可能已被空帧钳掉,这里按"锚点帖"重新定位,与索引无关,不受首屏数据晚到
     // 影响。精品区不参与(重新开始语义)
-    LaunchedEffect(threadList) {
+    LaunchedEffect(threadList, forumRuleTitle) {
         if (isGood || threadList.isEmpty()) return@LaunchedEffect
-        val anchor = ForumBrowseCache.consumeRestoreAnchor(browseCacheKey) ?: return@LaunchedEffect
-        // 原子读:列表与吧规头部同取一份 uiState 快照。此前分别读两个
-        // collectPartialAsState 状态,跨帧不同步时 +1 偏移会错位到错误条目
+        // 2026-10-20:先 peek 校验、通过后才消费。此前 consume 在 indexOfFirst 之前,
+        // 锚点帖不在当前列表时会白消费一次,只剩被空帧钳到 0 的 saveable 索引 = 回到顶部。
+        val anchor = ForumBrowseCache.peekRestoreAnchor(browseCacheKey) ?: return@LaunchedEffect
         val state = viewModel.uiState.value
         val listIndex = state.threadList.indexOfFirst { it.thread.get { id } == anchor.key }
-        if (listIndex >= 0) {
-            val lazyIndex = listIndex + if (state.forumRuleTitle != null) 1 else 0
-            lazyListState.scrollToItem(lazyIndex, anchor.offset)
+        if (listIndex < 0) {
+            ForumBrowseCache.consumeRestoreAnchor(browseCacheKey)
+            return@LaunchedEffect
         }
+        // 表头偏移口径必须与渲染处(:199 `!forumRuleTitle.isNullOrEmpty()`)一致——此前用
+        // `state.forumRuleTitle != null`,空串会多 +1 落到下一条帖子(错位);key 里加
+        // forumRuleTitle 后,表头晚到会重跑而不是把错误 +1 固定下来。
+        val lazyIndex = listIndex + if (!forumRuleTitle.isNullOrEmpty()) 1 else 0
+        ForumBrowseCache.consumeRestoreAnchor(browseCacheKey)
+        lazyListState.scrollToItem(lazyIndex, anchor.offset)
     }
     Box(
         modifier = Modifier.fillMaxSize()

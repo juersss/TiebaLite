@@ -33,11 +33,20 @@ object ForumBrowseCache {
     fun key(forumName: String, isGood: Boolean, sortType: Int): String =
         "$forumName|$isGood|$sortType"
 
-    /** 离开吧页时登记锚点(页面 DisposableEffect 调用;anchor 为 null 表示离开时在顶部) */
+    /**
+     * 离开吧页时登记锚点(页面 DisposableEffect 调用)。
+     *
+     * [anchor] 为 null 表示"离开时在顶部"——此时必须**清掉**此前登记的旧条目(2026-10-20 修):
+     * 旧实现直接 return,于是"刷新后停在顶部再进帖返回"会被更早的旧锚点拽回刷新前的位置。
+     */
     fun markPendingRestore(key: String, anchor: Anchor?) {
-        if (anchor == null) return
-        synchronized(lock) { pending[key] = anchor }
+        synchronized(lock) {
+            if (anchor == null) pending.remove(key) else pending[key] = anchor
+        }
     }
+
+    /** 非破坏性读取(恢复前校验用);真正消费仍走 [consumeRestoreAnchor]。 */
+    fun peekRestoreAnchor(key: String): Anchor? = synchronized(lock) { pending[key] }
 
     /** 数据落地后取走待恢复锚点;取走即失效,只恢复一次(重新进入的归零语义靠丢弃实现) */
     fun consumeRestoreAnchor(key: String): Anchor? {
