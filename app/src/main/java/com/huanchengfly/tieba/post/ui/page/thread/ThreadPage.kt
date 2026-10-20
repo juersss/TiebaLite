@@ -1198,7 +1198,7 @@ fun ThreadPage(
             blocked = blocked,
             canDelete = { it.author_id == user.get { id } },
             immersiveMode = isImmersiveMode,
-            isCollected = { it.id == thread?.get { collectMarkPid.toLongOrNull() } },
+            isCollected = { post -> (thread?.get { collectStatus } ?: 0) != 0 && post.id > 0 && !post.isAiAgentFloor && post.id == thread?.get { collectMarkPid.toLongOrNull() } },
             onUserClick = {
                 navigator.navigate(UserProfilePageDestination(it.id))
             },
