@@ -50,7 +50,13 @@ fun <T> rememberPreferenceAsMutableState(
             .collect { state.value = it }
     }
 
+    // 2026-10-20:跳过首帧(默认值)的写入,否则会把已持久化的非默认值静默改回默认。
+    val seeded = remember { mutableStateOf(false) }
     LaunchedEffect(state.value) {
+        if (!seeded.value) {
+            seeded.value = true
+            return@LaunchedEffect
+        }
         dataStore.edit { it[key] = state.value }
     }
 
@@ -70,9 +76,6 @@ fun <T> rememberPreferenceAsState(
             .collect { state.value = it }
     }
 
-    LaunchedEffect(state.value) {
-        dataStore.edit { it[key] = state.value }
-    }
 
     return state
 }
