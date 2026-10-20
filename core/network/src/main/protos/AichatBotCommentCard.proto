@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package tieba;
+
+option java_package = "com.huanchengfly.tieba.post.core.network.model.protos";
+
+// 官方 22.9.1 起的“智能体（AI 助手）”卡：线程内以普通 Post 形态下发，
+// 但带本消息（Post.aichat_bot_comment_card），且没有真实楼层号。
+message AichatBotCommentCard {
+  string uk = 1;
+  string bot_type = 2;
+}

@@ -5,6 +5,7 @@ package tieba;
 option java_package = "com.huanchengfly.tieba.post.core.network.model.protos";
 
 import "ActPost.proto";
+import "AichatBotCommentCard.proto";
 import "AddPostList.proto";
 import "Advertisement.proto";
 import "Agree.proto";
@@ -86,4 +87,9 @@ message Post {
     int32 fold_comment_status = 56;
     string fold_comment_apply_url = 57;
     NovelInfo novel_info = 58;
+    // 官方 22.9.1 的智能体（AI 助手）字段。此前 Post.proto 只建模到 58，这些字段落进
+    // unknownFields —— 智能体卡因为“看不见”被当成普通楼层渲染出错误楼层号（2026-10-20 修）。
+    // 判据对齐官方 PostData.J0()：aichat_bot_comment_card.uk 非空即智能体卡。
+    int32 is_bot_reply = 73;
+    AichatBotCommentCard aichat_bot_comment_card = 80;
 }

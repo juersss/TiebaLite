@@ -736,7 +736,7 @@ fun ThreadPage(
                 }?.key as String?
                 // 精确匹配锚点 key（Post_<id>）：此前用 endsWith，会让 "Post_112345" 命中 id=2345
                 // 的楼层 → 记录到历史里的"最后可见楼层"是错的，从历史续读会跳到错误楼层。
-                lastPostKey == "Post_${post.get { id }}"
+                !post.get { isAiAgentFloor } && lastPostKey == "Post_${post.get { id }}"
             }?.post ?: firstPost
         }
     }
@@ -1280,7 +1280,8 @@ fun ThreadPage(
                 )
             },
             onMenuFavoriteClick = {
-                val isPostCollected =
+                // 智能体卡(id=0)与未收藏帖的 "0" 都不得命中
+                val isPostCollected = it.id > 0 && !it.isAiAgentFloor &&
                     it.id == thread?.get { collectMarkPid.toLongOrNull() }
                 val fid = forum?.get { id } ?: forumId
                 val tbs = anti?.get { tbs }
@@ -1671,7 +1672,7 @@ fun ThreadPage(
                                                     canDelete = { it.author_id == user.get { id } },
                                                     immersiveMode = isImmersiveMode,
                                                     isCollected = {
-                                                        it.id == thread?.get { collectMarkPid }
+                                                        it.id > 0 && it.id == thread?.get { collectMarkPid }
                                                             ?.toLongOrNull()
                                                     },
                                                     showSubPosts = false,
@@ -1972,7 +1973,13 @@ fun ThreadPage(
                                 } else {
                                     items(
                                         items = data,
-                                        key = { (item) -> "Post_${item.get { id }}" }
+                                        key = { (item) ->
+                if (item.get { isAiAgentFloor }) {
+                    "PostAi_${item.get { aichat_bot_comment_card?.uk.orEmpty() }}"
+                } else {
+                    "Post_${item.get { id }}"
+                }
+            }
                                     ) { (item, blocked, renders, subPosts) ->
                                         Container {
                                             PostCard(
@@ -2766,3 +2773,17 @@ private fun ThreadMenu(
         }
     }
 }
+
+/**
+ * 智能体（AI 助手）卡不是真实楼层（2026-10-20）。
+ *
+ * 官方 22.9.1 起，帖内会下发一条普通 `Post` 形态的“智能体”卡：带 `aichat_bot_comment_card`
+ * （或 `is_bot_reply`），但**没有真实楼层号**——服务端要么给 0，要么把它占用的槽位留空
+ * （实测某帖 floor 序列 1..15、17..33：16 正是它的保留槽位）。本 fork 的 `Post.proto` 此前只
+ * 建模到 tag 58，这些字段落进 unknownFields，于是卡片被当作普通楼层渲染成“第 16 楼”，
+ * 看起来就是楼层错位；又因为合成卡的 `id` 为 0，而“已收藏到本楼”chip 此前用
+ * `id == collectMarkPid.toLongOrNull()`（未收藏时该字段是字符串 "0" → 0L）比较，
+ * 0 == 0 命中，凭空多出一个“已收藏”标记。判据对齐官方 `PostData.J0()`。
+ */
+private val Post.isAiAgentFloor: Boolean
+    get() = (aichat_bot_comment_card?.uk?.isNotEmpty() == true) || is_bot_reply == 1
