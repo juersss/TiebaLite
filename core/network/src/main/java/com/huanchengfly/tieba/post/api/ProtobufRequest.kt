@@ -24,10 +24,19 @@ import java.util.Locale
 
 const val BOUNDARY = "--------7da3d81520810*"
 
+/**
+ * 组装 protobuf 请求的 multipart 外壳。
+ *
+ * @param needSToken 是否附带 STOKEN 表单字段（多数接口需要）
+ * @param stoken **显式指定**的 STOKEN；为空时回退到进程会话的当前账号。
+ *   非当前账号的请求（如"添加账号"时按 uid 拉资料）必须传它——否则表单里的 STOKEN 属于
+ *   当前登录账号、body 里的 BDUSS 属于待添加账号，服务端会按错的身份处理。
+ */
 fun buildProtobufRequestBody(
     data: Message<*, *>,
     clientVersion: ClientVersion = ClientVersion.TIEBA_V11,
     needSToken: Boolean = true,
+    stoken: String? = null,
 ): MyMultipartBody {
     return MyMultipartBody.Builder(BOUNDARY)
         .apply {
@@ -36,8 +45,8 @@ fun buildProtobufRequestBody(
                 addFormDataPart(Param.CLIENT_VERSION, clientVersion.version)
             }
             if (needSToken) {
-                val sToken = SessionProviders.credential.getSToken()
-                if (sToken != null) addFormDataPart(Param.STOKEN, sToken)
+                val effectiveSToken = stoken ?: SessionProviders.credential.getSToken()
+                if (effectiveSToken != null) addFormDataPart(Param.STOKEN, effectiveSToken)
             }
             addFormDataPart("data", "file", data.encode().toRequestBody())
         }
@@ -66,6 +75,14 @@ fun buildAppPosInfo(): AppPosInfo {
     )
 }
 
+/**
+ * 组装 protobuf 请求的 `common` 字段。
+ *
+ * **账号口径（2026-10-20 修）**：`bduss`/`stoken` 一旦显式给出就**必须**用它，不能再回落到
+ * 进程会话的当前账号——否则"添加账号"时按 uid 拉资料会拿当前账号的 BDUSS 去查，查到的是
+ * 别人（或直接失败）。修复前只有 V11 分支认这两个入参，V12 / V22 / V12_POST 分支一律读
+ * `SessionProviders.credential`。
+ */
 fun buildCommonRequest(
     context: Context = SessionProviders.appContext,
     clientVersion: ClientVersion = ClientVersion.TIEBA_V11,
@@ -101,7 +118,7 @@ fun buildCommonRequest(
 
     ClientVersion.TIEBA_V12 -> {
         CommonRequest(
-            BDUSS = SessionProviders.credential.getBduss(),
+            BDUSS = bduss ?: SessionProviders.credential.getBduss(),
             _client_id = ClientUtils.clientId ?: RetrofitTiebaApi.randomClientId,
             _client_type = 2,
             _client_version = clientVersion.version,
@@ -141,7 +158,7 @@ fun buildCommonRequest(
             sdk_ver = "2.34.0",
             start_scheme = "",
             start_type = 1,
-            stoken = SessionProviders.credential.getSToken(),
+            stoken = stoken ?: SessionProviders.credential.getSToken(),
             swan_game_ver = "1038000",
             tbs = tbs,
             user_agent = getUserAgent("tieba/${clientVersion.version}"),
@@ -151,7 +168,7 @@ fun buildCommonRequest(
 
     ClientVersion.TIEBA_V22 -> {
         CommonRequest(
-            BDUSS = SessionProviders.credential.getBduss(),
+            BDUSS = bduss ?: SessionProviders.credential.getBduss(),
             _client_id = ClientUtils.clientId ?: RetrofitTiebaApi.randomClientId,
             _client_type = 2,
             _client_version = clientVersion.version,
@@ -191,7 +208,7 @@ fun buildCommonRequest(
             sdk_ver = "3.36.0",
             start_scheme = "",
             start_type = 1,
-            stoken = SessionProviders.credential.getSToken(),
+            stoken = stoken ?: SessionProviders.credential.getSToken(),
             swan_game_ver = "2035000",
             user_agent = getUserAgent("tieba/${clientVersion.version}"),
             z_id = SessionProviders.credential.getZId()
@@ -200,7 +217,7 @@ fun buildCommonRequest(
 
     ClientVersion.TIEBA_V12_POST -> {
         CommonRequest(
-            BDUSS = SessionProviders.credential.getBduss(),
+            BDUSS = bduss ?: SessionProviders.credential.getBduss(),
             _client_id = ClientUtils.clientId ?: RetrofitTiebaApi.randomClientId,
             _client_type = 2,
             _client_version = clientVersion.version,
@@ -242,7 +259,7 @@ fun buildCommonRequest(
             sdk_ver = "2.34.0",
             start_scheme = "",
             start_type = 1,
-            stoken = SessionProviders.credential.getSToken(),
+            stoken = stoken ?: SessionProviders.credential.getSToken(),
             swan_game_ver = "1038000",
             tbs = tbs,
             user_agent = getUserAgent("tieba/${clientVersion.version}"),

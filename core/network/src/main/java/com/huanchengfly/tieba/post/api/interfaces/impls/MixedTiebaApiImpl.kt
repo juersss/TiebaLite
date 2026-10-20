@@ -1752,7 +1752,10 @@ object MixedTiebaApiImpl : ITiebaApi {
                     )
                 ),
                 clientVersion = ClientVersion.TIEBA_V12,
-                needSToken = true
+                needSToken = true,
+                // 与 body 里的 BDUSS 同源：这是"按 uid 查资料"（添加账号/别的账号主页），
+                // 表单里的 STOKEN 不能取当前登录账号的
+                stoken = sToken
             )
         )
     }
