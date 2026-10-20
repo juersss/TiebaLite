@@ -33,7 +33,12 @@ object ClientUtils {
      *   互相覆盖/丢更新（2026-09-26 收口；进程判定在 app 侧的 `utils/ProcessUtil`）。
      *   非主进程传 false：内存快照照常读出来（请求参数要用），只是不联网、不落盘。
      */
+    /** 是否允许"联网同步 + 落盘"。只有主进程为 true；见 [init] 的 KDoc。 */
+    @Volatile
+    private var persistEnabled: Boolean = true
+
     fun init(syncEnabled: Boolean = true) {
+        persistEnabled = syncEnabled
         CoroutineScope(Dispatchers.IO).launch {
             val store = SessionProviders.clientIds
             clientId = store.readClientId()
@@ -46,12 +51,15 @@ object ClientUtils {
 
     suspend fun saveBaiduId(id: String) {
         baiduId = id
-        SessionProviders.clientIds.writeBaiduId(id)
+        // 2026-10-20:非主进程**只更新内存快照,不落盘**。`:oksign` 是独立进程，它的
+        // CookieInterceptor 在响应带 Set-Cookie: BAIDUID 且内存 baiduId 为空时也会调到这里，
+        // 而 DataStore 不支持多进程写（第二写者会让主进程期间的设置更新丢更新）。
+        if (persistEnabled) SessionProviders.clientIds.writeBaiduId(id)
     }
 
     suspend fun setActiveTimestamp() {
         activeTimestamp = System.currentTimeMillis()
-        SessionProviders.clientIds.writeActiveTimestamp(activeTimestamp)
+        if (persistEnabled) SessionProviders.clientIds.writeActiveTimestamp(activeTimestamp)
     }
 
     private suspend fun sync() {
