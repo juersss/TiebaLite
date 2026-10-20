@@ -182,7 +182,14 @@ object RetrofitTiebaApi {
             "https://c.tieba.baidu.com/", // 外部审查-1:明文 http 会把 BDUSS/stoken 暴露给链路观察者(实测该域名支持 TLS)
             CommonHeaderInterceptor(
                 Header.USER_AGENT to { "bdtb for Android 12.41.7.1" },
-                Header.COOKIE to { "CUID=${CuidUtils.getNewCuid()};ka=open;TBBRAND=${Build.MODEL};BAIDUID=${ClientUtils.baiduId};" },
+                // 2026-10-20:BAIDUID 在启动早期（ClientUtils.init 的 IO 协程还没读完落盘值）为 null，
+                // 旧写法会拼出字面量 "BAIDUID=null" 发给服务端——没有该值时干脆不出现这一段。
+                Header.COOKIE to {
+                    buildString {
+                        append("CUID=${CuidUtils.getNewCuid()};ka=open;TBBRAND=${Build.MODEL};")
+                        ClientUtils.baiduId?.let { append("BAIDUID=$it;") }
+                    }
+                },
                 Header.CUID to { CuidUtils.getNewCuid() },
                 Header.CUID_GALAXY2 to { CuidUtils.getNewCuid() },
                 Header.CUID_GID to { "" },
