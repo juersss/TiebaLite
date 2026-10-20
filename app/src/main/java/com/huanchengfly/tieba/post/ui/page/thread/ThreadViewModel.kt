@@ -401,7 +401,7 @@ class ThreadViewModel @Inject constructor(
                     // first_floor_post 常缺 from_forum,补齐后主楼层多图才能绑定大图浏览数据
                     val firstPost = response.data_!!.first_floor_post
                         ?.withForumFallback(response.data_!!.forum)
-                    val notFirstPosts = postList.filterNot { it.floor == 1 }
+                    val notFirstPosts = postList.filterNot { it.floor == 1 || it.isAiAgentFloor }
                     ThreadPartialChange.Load.Success(
                         response.data_!!.thread!!.title,
                         response.data_!!.thread!!.author!!,
@@ -441,7 +441,7 @@ class ThreadViewModel @Inject constructor(
                     // 同上:补齐 from_forum,避免主楼层多图大图翻页整体失效
                     val firstPost = response.data_!!.first_floor_post
                         ?.withForumFallback(response.data_!!.forum)
-                    val notFirstPosts = postList.filterNot { it.floor == 1 }
+                    val notFirstPosts = postList.filterNot { it.floor == 1 || it.isAiAgentFloor }
                     ThreadPartialChange.LoadFirstPage.Success(
                         response.data_!!.thread!!.title,
                         response.data_!!.thread!!.author!!,
@@ -474,7 +474,7 @@ class ThreadViewModel @Inject constructor(
                         || response.data_!!.anti == null
                     ) throw TiebaUnknownException
                     val postList = response.data_!!.post_list
-                    val posts = postList.filterNot { it.floor == 1 || postIds.contains(it.id) }
+                    val posts = postList.filterNot { it.floor == 1 || it.isAiAgentFloor || postIds.contains(it.id) }
                     ThreadPartialChange.LoadMore.Success(
                         response.data_!!.thread!!.author!!,
                         posts.map { PostItemData(it.wrapImmutable()) },
@@ -508,7 +508,7 @@ class ThreadViewModel @Inject constructor(
                         || response.data_!!.anti == null
                     ) throw TiebaUnknownException
                     val postList = response.data_!!.post_list
-                    val posts = postList.filterNot { it.floor == 1 || postIds.contains(it.id) }
+                    val posts = postList.filterNot { it.floor == 1 || it.isAiAgentFloor || postIds.contains(it.id) }
                     ThreadPartialChange.LoadPrevious.Success(
                         response.data_!!.thread!!.author!!,
                         posts.map { PostItemData(it.wrapImmutable()) },
@@ -544,7 +544,7 @@ class ThreadViewModel @Inject constructor(
                     checkNotNull(response.data_!!.thread)
                     checkNotNull(response.data_!!.thread!!.author)
                     checkNotNull(response.data_!!.page)
-                    val postList = response.data_!!.post_list.filterNot { it.floor == 1 }
+                    val postList = response.data_!!.post_list.filterNot { it.floor == 1 || it.isAiAgentFloor }
                     if (postList.isEmpty()) {
                         ThreadPartialChange.LoadLatestPosts.SuccessWithNoNewPost
                     } else {

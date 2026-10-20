@@ -2785,5 +2785,5 @@ private fun ThreadMenu(
  * `id == collectMarkPid.toLongOrNull()`（未收藏时该字段是字符串 "0" → 0L）比较，
  * 0 == 0 命中，凭空多出一个“已收藏”标记。判据对齐官方 `PostData.J0()`。
  */
-private val Post.isAiAgentFloor: Boolean
+internal val Post.isAiAgentFloor: Boolean
     get() = (aichat_bot_comment_card?.uk?.isNotEmpty() == true) || is_bot_reply == 1
