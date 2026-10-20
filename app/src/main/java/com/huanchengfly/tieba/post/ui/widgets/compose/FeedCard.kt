@@ -1115,7 +1115,12 @@ fun VideoPlayer(
         }
     )
     val fullScreen by (videoPlayerController as DefaultVideoPlayerController).collect { isFullScreen }
-    val videoPlayerContent =
+    // 2026-10-20 修复（全屏黑屏）:此前 movableContentOf 每次重组都新建、且两个分支各自挂了
+    // DisposableEffect{release()} —— 进出全屏时被移除分支的 onDispose 会立刻 release 掉仍在
+    // 屏幕上的播放器，而 initialize() 只在 LaunchedEffect(Unit) 里跑一次、搬移时不重启，
+    // 于是全屏画面黑、退出全屏后内联播放器同样不可恢复。
+    // 现在:内容 remember 住以真正"搬移"，释放收敛到整张卡离开组合时一次。
+    val videoPlayerContent = remember(videoPlayerController) {
         movableContentOf { isFullScreen: Boolean, playerModifier: Modifier ->
             com.huanchengfly.tieba.post.ui.widgets.compose.video.VideoPlayer(
                 videoPlayerController = videoPlayerController,
@@ -1123,34 +1128,26 @@ fun VideoPlayer(
                 backgroundColor = if (isFullScreen) Color.Black else Color.Transparent
             )
         }
+    }
+    DisposableEffect(videoPlayerController) {
+        onDispose { videoPlayerController.release() }
+    }
 
     if (fullScreen) {
         Spacer(
             modifier = modifier
         )
         FullScreen {
-            DisposableEffect(
-                videoPlayerContent(
-                    true,
-                    Modifier.fillMaxSize()
-                )
-            ) {
-                onDispose {
-                    videoPlayerController.release()
-                }
-            }
+            videoPlayerContent(
+                true,
+                Modifier.fillMaxSize()
+            )
         }
     } else {
-        DisposableEffect(
-            videoPlayerContent(
-                false,
-                modifier
-            )
-        ) {
-            onDispose {
-                videoPlayerController.release()
-            }
-        }
+        videoPlayerContent(
+            false,
+            modifier
+        )
     }
 }
 
