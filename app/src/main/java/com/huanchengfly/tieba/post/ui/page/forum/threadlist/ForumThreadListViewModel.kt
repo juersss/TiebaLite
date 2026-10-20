@@ -370,7 +370,17 @@ sealed interface ForumThreadListPartialChange : PartialChange<ForumThreadListUiS
         override fun reduce(oldState: ForumThreadListUiState): ForumThreadListUiState =
             when (this) {
                 Start -> oldState.copy(isLoadingMore = true)
-                is Success -> oldState.copy(
+                // 2026-10-20：**过期结果必须丢弃**。Refresh/FirstLoad 是把游标重置成 1 的
+                // "新一次浏览"；若此时还有一页在途，它到达后会把 currentPage 写回旧值、
+                // 把旧页内容并到刚刷出来的列表后面——此后游标错位，某些页永远不会再被加载（漏页），
+                // 列表里新旧内容混排（跳页）。
+                // 合法值只有两种：同一页的"批量续拉"（page 不变，靠 thread_id_list 换窗口）
+                // 与"翻到下一页"（page + 1）。
+                is Success -> if (currentPage != oldState.currentPage &&
+                    currentPage != oldState.currentPage + 1
+                ) {
+                    oldState.copy(isLoadingMore = false)
+                } else oldState.copy(
                     isLoadingMore = false,
                     threadList = (oldState.threadList + threadList).distinctById(),
                     threadListIds = threadListIds.toImmutableList(),

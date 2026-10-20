@@ -296,7 +296,14 @@ sealed interface GeneralTabListPartialChange : PartialChange<GeneralTabListUiSta
     sealed class LoadMore : GeneralTabListPartialChange {
         override fun reduce(oldState: GeneralTabListUiState): GeneralTabListUiState = when (this) {
             Start -> oldState.copy(isLoadingMore = true)
-            is Success -> oldState.copy(
+            // 2026-10-20：与吧内列表同一口径——Refresh 把游标重置成 1 后，在途的旧页结果
+            // 不能再把 currentPage 推回旧值（否则漏页 + 新旧内容混排）。合法页只有
+            // "当前页"（幂等重放）与"当前页 + 1"。
+            is Success -> if (currentPage != oldState.currentPage &&
+                currentPage != oldState.currentPage + 1
+            ) {
+                oldState.copy(isLoadingMore = false)
+            } else oldState.copy(
                 isLoadingMore = false,
                 threadList = (oldState.threadList + threadList).distinctById(),
                 hasMore = hasMore,
