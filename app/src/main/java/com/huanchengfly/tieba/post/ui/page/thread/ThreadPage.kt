@@ -734,7 +734,9 @@ fun ThreadPage(
                 val lastPostKey = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull { info ->
                     info.key is String && (info.key as String).startsWith("Post_")
                 }?.key as String?
-                lastPostKey?.endsWith(post.get { id }.toString()) == true
+                // 精确匹配锚点 key（Post_<id>）：此前用 endsWith，会让 "Post_112345" 命中 id=2345
+                // 的楼层 → 记录到历史里的"最后可见楼层"是错的，从历史续读会跳到错误楼层。
+                lastPostKey == "Post_${post.get { id }}"
             }?.post ?: firstPost
         }
     }
