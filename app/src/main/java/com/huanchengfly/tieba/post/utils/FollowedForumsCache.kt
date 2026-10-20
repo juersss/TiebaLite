@@ -2,6 +2,7 @@ package com.huanchengfly.tieba.post.utils
 
 import com.huanchengfly.tieba.post.api.models.ForumGuideBean.LikeForum
 import com.huanchengfly.tieba.post.core.common.AppScope
+import com.huanchengfly.tieba.post.core.common.JobQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -28,6 +29,15 @@ object FollowedForumsCache {
      */
     private val lock = Any()
 
+    /**
+     * 落盘串行队列（2026-10-20）：提交顺序 = 执行顺序。
+     *
+     * 与 [lock] 的分工：[lock] 只保护内存状态的 read-modify-write；磁盘写入是挂起操作，
+     * 不能塞进 `synchronized`，故单开一条 FIFO 队列——内存先改、磁盘按同一顺序跟进，
+     * 整表替换与单行删除不会互相"穿越"。
+     */
+    private val writeQueue = JobQueue()
+
     @Volatile
     private var forumMap: Map<Long, LikeForum> = emptyMap()
 
@@ -52,9 +62,7 @@ object FollowedForumsCache {
         }
         persistWithUid { uid ->
             val rows = forums.orEmpty().map { it.toFollowedForum(uid) }
-            AppScope.launch(Dispatchers.IO) {
-                runCatching { DatabaseUtil.replaceFollowedForums(uid, rows) }
-            }
+            DatabaseUtil.replaceFollowedForums(uid, rows)
         }
     }
 
@@ -73,9 +81,7 @@ object FollowedForumsCache {
         }
         persistWithUid { uid ->
             val rows = forums.map { it.toFollowedForum(uid) }
-            AppScope.launch(Dispatchers.IO) {
-                runCatching { DatabaseUtil.mergeFollowedForums(uid, rows) }
-            }
+            DatabaseUtil.mergeFollowedForums(uid, rows)
         }
     }
 
@@ -92,9 +98,7 @@ object FollowedForumsCache {
             forumMap = newMap
         }
         persistWithUid { uid ->
-            AppScope.launch(Dispatchers.IO) {
-                runCatching { DatabaseUtil.mergeFollowedForums(uid, listOf(forum.toFollowedForum(uid))) }
-            }
+            DatabaseUtil.mergeFollowedForums(uid, listOf(forum.toFollowedForum(uid)))
         }
     }
 
@@ -108,9 +112,7 @@ object FollowedForumsCache {
             forumMap = newMap
         }
         persistWithUid { uid ->
-            AppScope.launch(Dispatchers.IO) {
-                runCatching { DatabaseUtil.deleteFollowedForum(uid, id) }
-            }
+            DatabaseUtil.deleteFollowedForum(uid, id)
         }
     }
 
@@ -166,12 +168,17 @@ object FollowedForumsCache {
      * 2. `ownerUid` 与**实时** uid 不一致 → 响应到达前已经切号，这份数据属于上一个账号，
      *    写下去就是跨账号污染（内存缓存侧的历史行为是"被 onAccountSwitched 清掉"，
      *    但落盘的数据会活到下次启动，所以必须在这里拦住）。
+     *
+     * **串行化（2026-10-20）**：此前每个动作各自 `AppScope.launch(IO)`，与内存更新顺序无关——
+     * `updateAll`（整表替换，慢）与 `removeFollowedForum`（单行删除，快）并发时后者可能先执行，
+     * 随后整表替换又把刚取消的那条写回来（"取消关注后重启它又出现了"）。改走 [JobQueue]：
+     * 提交顺序 = 执行顺序，与上面的内存改动严格同序。
      */
-    private fun persistWithUid(action: (uid: String) -> Unit) {
+    private fun persistWithUid(action: suspend (uid: String) -> Unit) {
         val uid = ownerUid
         if (uid.isEmpty()) return
         if (AccountUtil.getUid() != uid) return
-        action(uid)
+        writeQueue.submit(Dispatchers.IO) { runCatching { action(uid) } }
     }
 
     /**
