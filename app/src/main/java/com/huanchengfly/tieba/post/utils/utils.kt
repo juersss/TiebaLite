@@ -197,10 +197,14 @@ fun launchUrl(
             }
             return
         }
-        val isTiebaLink =
-            host.contains("tieba.baidu.com") || host.contains("wappass.baidu.com") || host.contains(
-                "ufosdk.baidu.com"
-            ) || host.contains("m.help.baidu.com")
+        // 2026-10-20 修复:此前用 host.contains("tieba.baidu.com")——`tieba.baidu.com.evil.tld`
+        // 也会命中，于是外部钓鱼域被当作站内链交给应用内 WebView（无地址栏）打开。
+        // 改为精确/子域后缀匹配（与 WebViewPage 的 isTiebaHost 同口径）。
+        fun hostIs(domain: String) = host.equals(domain, ignoreCase = true) ||
+            host.endsWith(".$domain", ignoreCase = true)
+
+        val isTiebaLink = hostIs("tieba.baidu.com") || hostIs("wappass.baidu.com") ||
+            hostIs("ufosdk.baidu.com") || hostIs("m.help.baidu.com")
         if (isTiebaLink || context.appPreferences.useWebView.value) {
             navigator.navigate(
                 WebViewPageDestination(url)

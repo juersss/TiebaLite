@@ -214,6 +214,12 @@ fun LoginPage(
                         setSupportZoom(true)
                         builtInZoomControls = true
                         displayZoomControls = false
+                        // 与 WebViewPage 同口径（2026-10-20）：登录页更不该允许页面子资源
+                        // 探测本机 file:// / content:// 内容。
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        allowFileAccessFromFileURLs = false
+                        allowUniversalAccessFromFileURLs = false
                     }
                 },
                 client = remember(navigator) {

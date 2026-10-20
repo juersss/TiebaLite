@@ -27,6 +27,14 @@
         domain="file"
         path="oprecords"
         tools:ignore="FullBackupContent" />
+    <!-- WebView 数据目录(2026-10-20 补):登录页的 BDUSS 来自 CookieManager，登录态
+         实际落在 app_webview/ 的 cookie 库里。库/指针都排了，这里不排就等于
+         "数据库不带、会话却可能一起走"。:oksign 进程若曾 setDataDirectorySuffix，
+         会出现 app_webview_<suffix>，它不承载登录态（只读别名扫描），按需再补。 -->
+    <exclude
+        domain="root"
+        path="app_webview"
+        tools:ignore="FullBackupContent" />
     <exclude
         domain="file"
         path="error"

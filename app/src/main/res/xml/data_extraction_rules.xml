@@ -33,6 +33,12 @@
             domain="file"
             path="error"
             tools:ignore="FullBackupContent" />
+        <!-- WebView 数据目录(2026-10-20 补):登录态 cookie 落在 app_webview/，与上面
+             排除 Room/accountData 的口径一致——凭据不随云备份离机 -->
+        <exclude
+            domain="root"
+            path="app_webview"
+            tools:ignore="FullBackupContent" />
     </cloud-backup>
     <device-transfer>
         <exclude
@@ -61,6 +67,11 @@
         <exclude
             domain="file"
             path="error"
+            tools:ignore="FullBackupContent" />
+        <!-- 同 cloud-backup:换机迁移同样不带走 WebView 登录态 -->
+        <exclude
+            domain="root"
+            path="app_webview"
             tools:ignore="FullBackupContent" />
     </device-transfer>
 </data-extraction-rules>

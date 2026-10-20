@@ -253,6 +253,13 @@ fun WebViewPage(
                         setSupportZoom(true)
                         builtInZoomControls = true
                         displayZoomControls = false
+                        // 2026-10-20:外部链接默认就在本页面内打开，而 allowFileAccess(API<30) /
+                        // allowContentAccess 默认 true —— 恶意页面的子资源可探测/加载本机
+                        // file:// 与 content:// 资源。这里统一关掉（主框架导航另有拦截）。
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        allowFileAccessFromFileURLs = false
+                        allowUniversalAccessFromFileURLs = false
                     }
                 },
                 client = remember(navigator) { MyWebViewClient(navigator) },
