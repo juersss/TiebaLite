@@ -117,4 +117,15 @@ jobs:
             echo "::error::缺少签名凭据时 validateReleaseSigning 竟然成功——fail-closed 守卫已失效(会产出 debug 签名的 release 包)"
             exit 1
           fi
+          # 只看退出码会假绿：配置期报错、依赖下载失败、任务被改名/删除都会让 rc != 0，
+          # 而 fail-closed 实际上从未被执行。必须同时断言"失败的正是这个任务"且
+          # "失败原因是缺凭据"——两条串一起才证明守卫真的跑过。
+          if ! grep -q "> Task :app:validateReleaseSigning FAILED" guard.log; then
+            echo "::error::退出码非 0 但不是 validateReleaseSigning 失败(任务缺失/配置期报错/网络失败)——门禁判定无效"
+            exit 1
+          fi
+          if ! grep -q "拒绝静默降级" guard.log; then
+            echo "::error::validateReleaseSigning 失败了,但报错不是'缺凭据'(守卫逻辑被改坏)——门禁判定无效"
+            exit 1
+          fi
           echo "✅ 缺凭据时按预期失败,fail-closed 生效"

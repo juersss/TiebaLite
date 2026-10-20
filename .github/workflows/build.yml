@@ -27,6 +27,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # 2026-10-20：发版 job 需要 contents: write（上传 Release 资产），但**不要把**
+          # 这个写权限的 token 持久化进 .git/config——构建脚本/依赖的 Gradle 插件都能读到
+          # 那处凭据。gh-release 用的是事件上下文里的 GITHUB_TOKEN，与此无关。
+          persist-credentials: false
 
       # 供应链:发版路径同样校验 wrapper jar 未被替换
       - name: Validate Gradle wrapper
@@ -81,8 +86,18 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/4.0-dev' }} # 原判断引用了仓库不存在的 master 分支
 
       # 外部审查 v2-R4:单测必须进 CI 才有回归保护价值(此前只打包不测试)
+      # 2026-10-20：补上与 test.yml 同口径的三重防假绿——只写 testDebugUnitTest 时
+      # 任务可能 UP-TO-DATE / FROM-CACHE 一个用例都不跑；发版路径尤其不能"看起来跑过"。
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest
+        run: ./gradlew cleanTestDebugUnitTest testDebugUnitTest --no-build-cache
+
+      # 2026-10-20：发版路径此前完全不过 lint（app 侧 checkReleaseBuilds=false，而
+      # test.yml 的 lintDebug 只在 push/PR 时跑——tag 若打在未过 lint 的提交上就没有
+      # 任何静态分析）。lintRelease 与 lintDebug 共用同一份 lint-baseline.xml，
+      # 增量错误同样阻断发版。本地实测（2026-10-20）该任务可通过。
+      - name: Run Android Lint (release)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./gradlew lintRelease
 
       # 外部审查-7:分支 dispatch 不具备签名凭据,只构建 debug 包做冒烟验证;
       # tag 构建才有 release 打包
