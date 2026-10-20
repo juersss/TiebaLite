@@ -51,16 +51,30 @@ class SettingsRepositoryTest {
     private val baselineFile: File = findBaseline()
 
     /**
-     * 清空 DataStore 并**等它真的落盘**。
+     * 清空 DataStore 并**等它真的落盘**，且"空"要稳定观测到两次。
      *
      * 后续断言都建立在"空库"前提上；`edit {}` 是挂起函数、返回即已落盘，但**本类的
      * 每个用例是一个新实例、共享同一个进程级 DataStore 文件**，不等就会出现"读到上一个
      * 用例残留"的偶发红（2026-09-17 实测：save 用例把 radius 从残留值上累加）。
+     *
+     * 2026-10-20：只"清一次 + 看到空就返回"仍不够——上一个用例（或本用例自己）排队中的
+     * 写可能在我们清空**之后**才落地，于是库又变成非空、而这个 helper 只会等待不会重清，
+     * 直接超时（CI Linux 上稳定复现：`setBeforeWarmUpDoesNotDropOtherCachedKeys` 收尾的
+     * clear 等到 10s 超时）。现在改成自愈循环：非空就再清一次，连续两次观测到空才算干净。
      */
     private suspend fun clearStoreAndAwait() {
-        context.dataStore.edit { it.clear() }
         withTimeout(10_000) {
-            while (context.dataStore.data.first().asMap().isNotEmpty()) delay(20)
+            var stableEmpty = 0
+            while (stableEmpty < 2) {
+                val empty = context.dataStore.data.first().asMap().isEmpty()
+                if (empty) {
+                    stableEmpty++
+                } else {
+                    stableEmpty = 0
+                    context.dataStore.edit { it.clear() }
+                }
+                delay(150)
+            }
         }
     }
 

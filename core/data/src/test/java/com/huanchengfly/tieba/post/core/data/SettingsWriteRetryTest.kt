@@ -53,10 +53,25 @@ class SettingsWriteRetryTest {
         }
     }
 
+    /**
+     * 清空并等"空"稳定观测到两次。
+     *
+     * 与 `SettingsRepositoryTest.clearStoreAndAwait` 同口径：只清一次的话，别的用例
+     * 还在队列里的写会在清空之后落地 → 库又非空且本方法只等不重清，直接超时。
+     */
     private suspend fun clearStore() {
-        context.dataStore.edit { it.clear() }
         withTimeout(10_000) {
-            while (context.dataStore.data.first().asMap().isNotEmpty()) delay(20)
+            var stableEmpty = 0
+            while (stableEmpty < 2) {
+                val empty = context.dataStore.data.first().asMap().isEmpty()
+                if (empty) {
+                    stableEmpty++
+                } else {
+                    stableEmpty = 0
+                    context.dataStore.edit { it.clear() }
+                }
+                delay(150)
+            }
         }
     }
 
