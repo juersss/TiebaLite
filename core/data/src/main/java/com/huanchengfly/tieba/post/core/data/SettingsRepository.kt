@@ -3,18 +3,18 @@ package com.huanchengfly.tieba.post.core.data
 import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.huanchengfly.tieba.post.core.common.AppScope
 import com.huanchengfly.tieba.post.core.common.JobQueue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.util.concurrent.atomic.AtomicReference
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -160,6 +160,7 @@ interface SettingsRepository {
  * **同步读缓存（Phase 6.5）**：进程内维护单份 `Preferences` 缓存（一个后台收集器保鲜），
  * 未预热时按需阻塞读一次——与旧 `AppPreferencesUtils` 的"首次 get 阻塞 + 之后读内存"
  * 语义一致；`set` 先乐观改缓存（读后写立即可见）再排队落盘。
+ * 缓存与磁盘/其它写者的一致性协议见 [SettingsCache]（2026-10-20 收口三路覆盖）。
  *
  * **启动期预热 + 订阅式读（Phase 8，挂账 §三-1 收口）**：`App.onCreate` 显式调 [warmUp] 填满
  * 缓存，组合期读点改走 [Settings.state] 订阅——惰性阻塞读由此退化成"框架早于 `onCreate`"的兜底，
@@ -167,44 +168,67 @@ interface SettingsRepository {
  */
 class DataStoreSettingsRepository(
     context: Context,
+    /** 测试注入点（生产恒为 `Context.dataStore`，进程级单例）：默认参数让 Dagger 无需改动。 */
+    private val dataStore: DataStore<Preferences> = context.dataStore,
 ) : SettingsRepository {
 
     private val queue = JobQueue()
 
-    private val dataStore: DataStore<Preferences> = context.dataStore
-
-    /** 同步读的共享缓存；null = 尚未预热 */
-    private val cache = AtomicReference<Preferences?>(null)
-
-    private val warmLock = Any()
+    /**
+     * 同步读的共享缓存（协议见 [SettingsCache]，本类只负责"取数 / 排队落盘"）。
+     *
+     * 三路写入的一致性由它收口：收集器差量合并、乐观 set 带结算、`save` 成功后回写。
+     */
+    private val cache = SettingsCache()
 
     init {
         // 单份收集器保鲜缓存（与 DataStore 实例同生命周期：进程级）
         AppScope.launch {
-            dataStore.data.collect { cache.set(it) }
+            dataStore.data.collect { cache.onDiskSnapshot(it) }
         }
     }
 
-    /** 同步读入口：命中缓存直接返回，否则阻塞预热一次（对齐旧层的阻塞读语义）。 */
+    /**
+     * 同步读入口：命中缓存直接返回，否则阻塞预热一次（对齐旧层的阻塞读语义）。
+     *
+     * 阻塞读放在缓存锁之外：预热 I/O 期间收集器仍可推进，不与本方法互等。
+     */
     private fun current(): Preferences =
-        cache.get() ?: synchronized(warmLock) {
-            cache.get() ?: runBlocking { dataStore.data.first() }.also { cache.set(it) }
-        }
+        cache.peek() ?: runBlocking { dataStore.data.first() }.let { cache.seed(it) }
 
-    /** 乐观更新缓存：保证"写后立即读得到新值"（旧 ReadWriteProperty.set 的语义）。 */
-    private fun updateCache(block: MutablePreferences.() -> Unit) {
-        // 不用 AtomicReference.updateAndGet：它要求 API 24，而本项目 minSdk 23（lint NewApi 会红）。
-        // 本方法只在设置写入时调用、频率极低，用与 current() 同一把锁做同步替换即可，语义等价。
-        synchronized(warmLock) {
-            cache.set(
-                (cache.get() ?: emptyPreferences()).toMutablePreferences().apply(block).toPreferences()
-            )
-        }
-    }
-
-    /** 见 [SettingsRepository.warmUp]：幂等；缓存已热时只是一个 [AtomicReference] 读。 */
+    /** 见 [SettingsRepository.warmUp]：幂等；缓存已热时只是一次内存读。 */
     override fun warmUp() {
         current()
+    }
+
+    /**
+     * 落盘一次，`IOException` 时**重试**（最多 [WRITE_ATTEMPTS] 次，间隔 [WRITE_RETRY_DELAY_MS]）。
+     *
+     * 为什么必须重试：DataStore 在 Windows 上用 `Files.move(REPLACE_EXISTING)` 覆盖文件，
+     * 目标文件被杀软/索引/另一个句柄瞬时占用时会抛 `IOException`（"Unable to rename" 同源）。
+     * 单测已实测到约 10% 概率随机丢一个键（`allSettingsPersistKeyByKey` 偶发只落 61 项）——
+     * 修复前该异常被 JobQueue 吞掉，写入**永久丢失**且没有任何回滚或提示。
+     *
+     * 只重试 IO 类失败：`set` 的写入是幂等的；`save` 的重入由调用方保证不重复执行 transform。
+     * 其余异常（类型错误、键冲突等）重试无意义，直接判失败。
+     *
+     * @return true = 已落盘；false = 重试后仍失败（调用方负责回滚/放弃）。
+     */
+    private suspend fun retryWritesOnIoFailure(block: suspend () -> Unit): Boolean {
+        repeat(WRITE_ATTEMPTS) { attempt ->
+            try {
+                block()
+                return true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                if (attempt == WRITE_ATTEMPTS - 1) return false
+                delay(WRITE_RETRY_DELAY_MS)
+            } catch (_: Throwable) {
+                return false
+            }
+        }
+        return false
     }
 
     private inner class SimpleSettings<T>(
@@ -216,29 +240,58 @@ class DataStoreSettingsRepository(
     ) {
 
         /**
-         * 初值取**进程缓存现值**（`cache.get()`，不触发预热 I/O），因此启动期 [warmUp] 之后
+         * 初值取**进程缓存现值**（`cache.peek()`，不触发预热 I/O），因此启动期 [warmUp] 之后
          * 组合期第一帧拿到的就是落盘值，不会退化成 `default`。`by lazy`：只有真正被订阅的
          * 设置项才起收集器（当前只有 theme 链的 `toolbarPrimaryColor`）。
          */
         override val state: StateFlow<T> by lazy {
-            flow.stateIn(AppScope, SharingStarted.Eagerly, cache.get()?.get(key) ?: default)
+            flow.stateIn(AppScope, SharingStarted.Eagerly, cache.peek()?.get(key) ?: default)
         }
 
+        /**
+         * 写入（`set` 语义）：**立刻**改同步缓存，再排队落盘。
+         *
+         * 落盘失败时 [SettingsCache.settleSet] 会把该键回滚到磁盘值——否则缓存里会留下
+         * 一个磁盘上不存在的值，直到下次冷启动才"莫名其妙变回去"。
+         */
         override fun set(new: T) {
-            updateCache { if (new == null) remove(key) else set(key, new) }
+            // 先取一次 current()：缓存未预热时不能凭空造一份只有单个键的快照（会丢另外 61 项）
+            current()
+            val handle = cache.beginSet(key, new)
             queue.submit(Dispatchers.IO) {
+                val success = retryWritesOnIoFailure {
+                    dataStore.edit {
+                        // 可空字符串设置：null = 删除键（与 AppPreferencesUtils 的 string 代理一致）
+                        if (new == null) it.remove(key) else it[key] = new
+                    }
+                }
+                cache.settleSet(key, handle, success)
+            }
+        }
+
+        /**
+         * 读-改-写（`save` 语义）：变换发生在队列里，基于**磁盘现值**而不是缓存值，
+         * 因此不会把别的写者（外部 `dataStore.edit`）的改动吃掉。
+         *
+         * `save` 没有乐观值可回滚：失败就什么都不做（缓存保持磁盘值）；成功则把结果写回缓存，
+         * 让 `value` 与 `set` 一样在写完后可见。
+         *
+         * 重试时**绝不重复执行 transform**（`it + 1` 会被加两次）：第一次就把结果记进
+         * `produced`，后续尝试只重放"写入这个已知值"。
+         */
+        override fun save(transform: (T) -> T) = queue.submit(Dispatchers.IO) {
+            var produced: Any? = null
+            var known = false
+            val success = retryWritesOnIoFailure {
                 dataStore.edit {
-                    // 可空字符串设置：null = 删除键（与 AppPreferencesUtils 的 string 代理一致）
-                    if (new == null) it.remove(key) else it[key] = new
+                    if (!known) {
+                        produced = transform(it[key] ?: default)
+                        known = true
+                    }
+                    it.setOrRemove(key, produced)
                 }
             }
-        }
-
-        override fun save(transform: (T) -> T) = queue.submit(Dispatchers.IO) {
-            dataStore.edit {
-                val new = transform(it[key] ?: default)
-                if (new == null) it.remove(key) else it[key] = new
-            }
+            if (success) cache.applySaved(key, produced)
         }
     }
 
@@ -304,4 +357,16 @@ class DataStoreSettingsRepository(
     override val translucentPrimaryColor: Settings<String?> = SimpleSettings(stringPreferencesKey(SettingsKeys.KEY_TRANSLUCENT_PRIMARY_COLOR) as Preferences.Key<String?>, null)
     override val useCustomTabs: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_USE_CUSTOM_TABS), true)
     override val useWebView: Settings<Boolean> = SimpleSettings(booleanPreferencesKey(SettingsKeys.KEY_USE_WEB_VIEW), true)
+
+    private companion object {
+        /**
+         * 一次写入最多尝试几次（首次 + 重试 2 次）。
+         *
+         * 3 次足够覆盖"文件被瞬时占用"这类毫秒级抖动；再多就变成"用户已感知卡顿还写不进去"。
+         */
+        const val WRITE_ATTEMPTS = 3
+
+        /** 重试间隔：给占用文件的句柄一点释放时间，又不至于让串行队列明显变慢。 */
+        const val WRITE_RETRY_DELAY_MS = 40L
+    }
 }

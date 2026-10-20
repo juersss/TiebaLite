@@ -236,6 +236,43 @@ class SettingsRepositoryTest {
         }
     }
 
+    /**
+     * 回归点（审查 §二-3 "整份覆盖会丢键"）：缓存**未预热**时 `set()` 曾在 `emptyPreferences()`
+     * 上叠加，缓存里只剩刚写的那个键——其余 61 项的同步读全部退回默认值（字号/主题被"重置"）。
+     * 现在 `set()` 前必须先预热，冷缓存下写一个键不能动到别的键。
+     */
+    @Test
+    fun setBeforeWarmUpDoesNotDropOtherCachedKeys() = runBlocking {
+        clearStoreAndAwait()
+        context.dataStore.edit {
+            it[stringPreferencesKey(SettingsKeys.KEY_LITTLE_TAIL)] = "已落盘的小尾巴"
+        }
+
+        // 全新实例 = 冷缓存（本用例不掉用 warmUp，直接让 set 成为进程内第一次触碰缓存的操作）
+        val cold = DataStoreSettingsRepository(context)
+        cold.radius.set(30)
+
+        assertEquals("刚写的值必须立即可见", 30, cold.radius.value)
+        assertEquals("冷缓存写入不能丢掉已落盘的其它键", "已落盘的小尾巴", cold.littleTail.value)
+
+        clearStoreAndAwait()
+    }
+
+    /**
+     * 回归点（审查 §二-4 "save 与 set 的缓存语义不一致"）：`save` 的结果落盘后，
+     * 同步读 `value` 必须能看到——否则"读-改-写"之后的立即读取拿到的是旧值。
+     */
+    @Test
+    fun saveResultBecomesVisibleThroughValue() = runBlocking {
+        clearStoreAndAwait()
+        repo.radius.save { it + 1 }
+        withTimeout(10_000) {
+            while (repo.radius.value != 9) delay(20)
+        }
+        assertEquals(9, repo.radius.value)
+        clearStoreAndAwait()
+    }
+
     /** 外部（直接 DataStore）写入后，`value` 必须能读到——由共享收集器/预热兜底。 */
     @Test
     fun externalWriteBecomesVisibleThroughValue() {
