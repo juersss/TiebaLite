@@ -1281,7 +1281,7 @@ fun ThreadPage(
             },
             onMenuFavoriteClick = {
                 // 智能体卡(id=0)与未收藏帖的 "0" 都不得命中
-                val isPostCollected = it.id > 0 && !it.isAiAgentFloor &&
+                val isPostCollected = (thread?.get { collectStatus } ?: 0) != 0 && it.id > 0 && !it.isAiAgentFloor &&
                     it.id == thread?.get { collectMarkPid.toLongOrNull() }
                 val fid = forum?.get { id } ?: forumId
                 val tbs = anti?.get { tbs }
@@ -1672,7 +1672,7 @@ fun ThreadPage(
                                                     canDelete = { it.author_id == user.get { id } },
                                                     immersiveMode = isImmersiveMode,
                                                     isCollected = {
-                                                        it.id > 0 && it.id == thread?.get { collectMarkPid }
+                                                        (thread?.get { collectStatus } ?: 0) != 0 && it.id > 0 && it.id == thread?.get { collectMarkPid }
                                                             ?.toLongOrNull()
                                                     },
                                                     showSubPosts = false,
