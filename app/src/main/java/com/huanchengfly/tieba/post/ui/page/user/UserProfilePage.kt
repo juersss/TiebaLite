@@ -133,6 +133,8 @@ import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.delay
+import androidx.compose.ui.window.DialogProperties
+import com.ramcosta.composedestinations.spec.DestinationStyle
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.max
@@ -232,6 +234,43 @@ fun UserProfilePage(
                 )
             }
         }
+    }
+}
+
+/**
+ * 用户页的"全屏 Dialog"目的地（2026-10-20）。
+ *
+ * 为什么需要它：楼中楼是 `DestinationStyleBottomSheet`（Navigation 的 `FloatingWindow`），
+ * 而 Navigation 2.9.x 在 `navigate()` 到**普通**目的地时，会先把栈顶所有 `FloatingWindow`
+ * 自动 inclusive-pop 掉，再压新页——于是"楼中楼 → 点头像进用户页"那一刻楼中楼就被移出了
+ * 返回栈，返回时直接回到帖子页（用户实测：退出用户页会连带楼中楼一起退）。
+ * `Dialog` 风格同样属于 `FloatingWindow`，从 sheet 跳到它不会触发清理，sheet 原样留在栈里，
+ * 返回只关 dialog → 楼中楼（含滚动位置）还在。
+ *
+ * 只用于"从楼中楼进入"这一条路径；其它入口仍走普通 [UserProfilePage]（`UserProfilePageDestination`）。
+ */
+object UserProfileDialogStyle : DestinationStyle.Dialog {
+    override val properties: DialogProperties
+        get() = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        )
+}
+
+@ExperimentalMaterialApi
+@Destination(style = UserProfileDialogStyle::class)
+@Composable
+fun UserProfileDialogPage(
+    uid: Long,
+    navigator: DestinationsNavigator,
+) {
+    // UserProfilePage 的 Scaffold 背景是 Transparent，dialog 窗口里必须自带底色，否则透出下层
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ExtendedTheme.colors.background),
+    ) {
+        UserProfilePage(uid = uid, navigator = navigator)
     }
 }
 

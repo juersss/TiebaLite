@@ -62,6 +62,7 @@ import com.huanchengfly.tieba.post.ui.page.LocalNavigator
 import com.huanchengfly.tieba.post.ui.page.ProvideNavigator
 import com.huanchengfly.tieba.post.ui.page.destinations.CopyTextDialogPageDestination
 import com.huanchengfly.tieba.post.ui.page.destinations.ThreadPageDestination
+import com.huanchengfly.tieba.post.ui.page.destinations.UserProfileDialogPageDestination
 import com.huanchengfly.tieba.post.ui.page.destinations.UserProfilePageDestination
 import com.huanchengfly.tieba.post.ui.page.reply.ReplyArgs
 import com.huanchengfly.tieba.post.ui.page.reply.ReplyDialog
@@ -314,6 +315,18 @@ internal fun SubPostsContent(
         replyDialogState.show()
     }
 
+    /**
+     * 打开用户主页（2026-10-20）。**从楼中楼弹层进入时必须走 Dialog 目的地**：
+     * Navigation 在 navigate 到普通目的地时会把栈顶 FloatingWindow(sheet) 自动弹掉，
+     * 导致返回时连楼中楼一起退（详见 [UserProfileDialogPage] 的 KDoc）。
+     */
+    fun openUserProfile(uid: Long) {
+        navigator.navigate(
+            if (isSheet) UserProfileDialogPageDestination(uid)
+            else UserProfilePageDestination(uid)
+        )
+    }
+
     StateScreen(
         modifier = Modifier.fillMaxSize(),
         isEmpty = subPosts.isEmpty(),
@@ -462,7 +475,7 @@ internal fun SubPostsContent(
                                     canDelete = { it.author_id == account?.uid?.toLongOrNull() || it.author?.id == account?.uid?.toLongOrNull() || thread?.get { author?.id } ==  account?.uid?.toLongOrNull() },
                                         showSubPosts = false,
                                     onUserClick = {
-                                        navigator.navigate(UserProfilePageDestination(it.id))
+                                        openUserProfile(it.id)
                                     },
                                     onAgree = {
                                         val parentPostId = post?.get { id } ?: postId
@@ -551,7 +564,7 @@ internal fun SubPostsContent(
                             canDelete = { it.author_id == account?.uid?.toLongOrNull() || it.author?.id == account?.uid?.toLongOrNull() || thread?.get { author?.id } ==  account?.uid?.toLongOrNull() },
                             threadAuthorId = thread?.get { author?.id },
                             onUserClick = {
-                                navigator.navigate(UserProfilePageDestination(it.id))
+                                openUserProfile(it.id)
                             },
                             onAgree = {
                                 // 意图判定直读 prefs 真值:异步 init 窗口内内存表未加载(R8-NEW1)
