@@ -93,7 +93,12 @@ object SofireUtils {
                 decryptData.token
             }
             .catch {
+                // 2026-10-20：这里原先是 `it.printStackTrace()`——flow 就此**结束且一次都不发射**。
+                // 上游 SessionManager 用 `zip(fetchZid())` 等 zid，zip 缺一侧永不发射，于是
+                // 登录页停在"请稍候"、开机签到把"拿不到账号"误报成"无可签"。空串兜底让登录
+                // 主链路不被一个可选 token 卡死（zid 为空时调用方不写该字段）。
                 it.printStackTrace()
+                emit("")
             }
     }
 }

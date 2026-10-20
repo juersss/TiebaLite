@@ -185,7 +185,9 @@ class SessionManagerImpl @Inject constructor(
                             )
                         }
                         .zip(SofireUtils.fetchZid()) { account, zid ->
-                            account.apply { this.zid = zid }
+                            // 2026-10-20：zid 现在有"取不到就空串"的兜底（见 SofireUtils.fetchZid），
+                            // 空串不要写进账号——否则后续请求会带一个空的 BAIDUZID 签名参数。
+                            if (zid.isNotBlank()) account.apply { this.zid = zid } else account
                         }
                         .flatMapConcat { account ->
                             // uid 转换守卫:此处在 flatMapConcat transform 内求值,
