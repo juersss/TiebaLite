@@ -149,8 +149,7 @@ class ImageUploader(
     suspend fun uploadSinglePicture(
         filePath: String,
         isOriginImage: Boolean = false,
-    ): UploadPictureResultBean {
-        val file = compressImage(filePath, isOriginImage)
+    ): UploadPictureResultBean {        val file = compressImage(filePath, isOriginImage)
         // 同步段(校验/MD5/分块读取)失败则临时文件不会被下方 onCompletion 触及,单独清理;
         // 宽高校验必须落在同一段 try 内:原图模式对不可解码文件(损坏容器等)宽高为 0,
         // 校验在 try 外抛出会泄漏压缩临时文件且报出误导性的"宽高不正确"
@@ -212,7 +211,7 @@ class ImageUploader(
             withContext(NonCancellable + Dispatchers.IO) { file.delete() }
             throw t
         }
-        return requestBodies.asFlow()
+        val result = requestBodies.asFlow()
             .flatMapConcat { RetrofitTiebaApi.OFFICIAL_TIEBA_API.uploadPicture(it) }
             .catch {
                 throw UploadPictureFailedException(it.getErrorCode(), it.getErrorMessage())
@@ -225,6 +224,15 @@ class ImageUploader(
                 }
             }
             .last()
+        // 2026-10-20：HTTP 200 + 业务错误码（如"图片审核不通过""空间不足"）此前被当成成功——
+        // 模型现在不再因缺字段抛异常，必须显式判 error_code，否则失败会静默变成"上传成功"。
+        if (result.errorCode.isNotEmpty() && result.errorCode != "0") {
+            throw UploadPictureFailedException(
+                code = result.errorCode.toIntOrNull() ?: -1,
+                message = result.errorMsg.ifBlank { "上传图片失败（错误码 ${result.errorCode}）" },
+            )
+        }
+        return result
     }
 }
 
